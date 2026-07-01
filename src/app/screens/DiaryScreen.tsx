@@ -1,11 +1,10 @@
-import { ChevronLeft, ChevronRight, Camera, Play, Pause, SkipBack, SkipForward, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Camera, Play, Pause, SkipBack, SkipForward, X, Bold } from "lucide-react";
 import { useState, useEffect } from "react";
 import { db } from "../../firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { DIARY_PAGES, TRACKS } from "../data/mockData";
 import { Book } from "../types";
 
-// 스티커 목록
 const STICKERS = [
   "🌸", "🌷", "🌼", "🌻", "🍀", "🍁", "🌿",
   "⭐", "✨", "💫", "🌙", "☀️", "🌈",
@@ -14,12 +13,32 @@ const STICKERS = [
   "✈️", "🗺️", "🏖️", "🏔️", "🎡"
 ];
 
+const FONT_OPTIONS = [
+  { label: "고운바탕", value: "'Gowun Batang', serif" },
+  { label: "DM Serif", value: "'DM Serif Display', serif" },
+  { label: "Pretendard", value: "'Pretendard', sans-serif" },
+];
+
+const COLOR_OPTIONS = [
+  { label: "검정", value: "#2A2318" },
+  { label: "갈색", value: "#7A5C3A" },
+  { label: "골드", value: "#C8A97A" },
+  { label: "빨강", value: "#C0392B" },
+  { label: "파랑", value: "#2980B9" },
+  { label: "초록", value: "#27AE60" },
+  { label: "보라", value: "#8E44AD" },
+  { label: "회색", value: "#7F8C8D" },
+];
+
+const SIZE_OPTIONS = [10, 12, 14, 16, 20];
+
 interface Sticker {
-  id: string;
-  emoji: string;
-  x: number;
-  y: number;
-  size: number;
+  id: string; emoji: string; x: number; y: number; size: number;
+}
+
+interface TextBox {
+  id: string; content: string; x: number; y: number;
+  fontSize: number; color: string; fontFamily: string; bold: boolean;
 }
 
 export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRecord, bgmPlaying, trackIdx, onBgmToggle, onPrevTrack, onNextTrack }: {
@@ -31,39 +50,43 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const pg = DIARY_PAGES[page % DIARY_PAGES.length];
   const track = TRACKS[trackIdx];
 
-  // 텍스트 편집 상태
   const [isEditing, setIsEditing] = useState(false);
   const [textContent, setTextContent] = useState(pg.text.content);
   const [saving, setSaving] = useState(false);
-
-  // 꾸미기 모드
   const [decorMode, setDecorMode] = useState(false);
-  // 스티커 패널
   const [showStickerPanel, setShowStickerPanel] = useState(false);
-  // 배치된 스티커들
+  const [showTextPanel, setShowTextPanel] = useState(false);
   const [stickers, setStickers] = useState<Sticker[]>([]);
-  // 선택된 스티커 id
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
-  // 드래그 상태
-  const [dragging, setDragging] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
+  const [dragging, setDragging] = useState<{ type: "sticker" | "textbox"; id: string; offsetX: number; offsetY: number } | null>(null);
 
-  // 페이지 바뀌면 초기화
+  const [textBoxes, setTextBoxes] = useState<TextBox[]>([]);
+  const [selectedTextBox, setSelectedTextBox] = useState<string | null>(null);
+  const [editingTextBox, setEditingTextBox] = useState<string | null>(null);
+  const [newTextInput, setNewTextInput] = useState("");
+
+  // 텍스트 스타일 옵션
+  const [newFontSize, setNewFontSize] = useState(12);
+  const [newColor, setNewColor] = useState("#2A2318");
+  const [newFont, setNewFont] = useState("'Gowun Batang', serif");
+  const [newBold, setNewBold] = useState(false);
+
   useEffect(() => {
     setTextContent(pg.text.content);
     setIsEditing(false);
     setSelectedSticker(null);
+    setSelectedTextBox(null);
+    setEditingTextBox(null);
     setShowStickerPanel(false);
+    setShowTextPanel(false);
   }, [page]);
 
-  // Firebase에 텍스트 저장
   const saveText = async () => {
     if (!book.id) return;
     setSaving(true);
     try {
       const bookRef = doc(db, "rooms", String(book.id));
-      await updateDoc(bookRef, {
-        [`pages.${page}.text`]: textContent
-      });
+      await updateDoc(bookRef, { [`pages.${page}.text`]: textContent });
     } catch (e) {
       console.error("저장 실패:", e);
     } finally {
@@ -72,11 +95,9 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     }
   };
 
-  // 스티커 추가
   const addSticker = (emoji: string) => {
     const newSticker: Sticker = {
-      id: Date.now().toString(),
-      emoji,
+      id: Date.now().toString(), emoji,
       x: 80 + Math.random() * 100,
       y: 80 + Math.random() * 150,
       size: 28,
@@ -86,33 +107,72 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setSelectedSticker(newSticker.id);
   };
 
-  // 스티커 삭제
   const deleteSticker = (id: string) => {
     setStickers(prev => prev.filter(s => s.id !== id));
     setSelectedSticker(null);
   };
 
-  // 드래그 시작
+  const addTextBox = () => {
+    if (!newTextInput.trim()) return;
+    const newBox: TextBox = {
+      id: Date.now().toString(),
+      content: newTextInput,
+      x: 60 + Math.random() * 80,
+      y: 60 + Math.random() * 120,
+      fontSize: newFontSize,
+      color: newColor,
+      fontFamily: newFont,
+      bold: newBold,
+    };
+    setTextBoxes(prev => [...prev, newBox]);
+    setNewTextInput("");
+    setShowTextPanel(false);
+    setSelectedTextBox(newBox.id);
+  };
+
+  const deleteTextBox = (id: string) => {
+    setTextBoxes(prev => prev.filter(t => t.id !== id));
+    setSelectedTextBox(null);
+    setEditingTextBox(null);
+  };
+
+  const updateTextBox = (id: string, content: string) => {
+    setTextBoxes(prev => prev.map(t => t.id === id ? { ...t, content } : t));
+  };
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!dragging) return;
+    if (dragging.type === "sticker") {
+      setStickers(prev => prev.map(s =>
+        s.id === dragging.id ? { ...s, x: e.clientX - dragging.offsetX, y: e.clientY - dragging.offsetY } : s
+      ));
+    } else {
+      setTextBoxes(prev => prev.map(t =>
+        t.id === dragging.id ? { ...t, x: e.clientX - dragging.offsetX, y: e.clientY - dragging.offsetY } : t
+      ));
+    }
+  };
+
+  const onMouseUp = () => setDragging(null);
+
   const onStickerMouseDown = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     setSelectedSticker(id);
+    setSelectedTextBox(null);
     const sticker = stickers.find(s => s.id === id);
     if (!sticker) return;
-    setDragging({ id, offsetX: e.clientX - sticker.x, offsetY: e.clientY - sticker.y });
+    setDragging({ type: "sticker", id, offsetX: e.clientX - sticker.x, offsetY: e.clientY - sticker.y });
   };
 
-  // 드래그 중
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!dragging) return;
-    setStickers(prev => prev.map(s =>
-      s.id === dragging.id
-        ? { ...s, x: e.clientX - dragging.offsetX, y: e.clientY - dragging.offsetY }
-        : s
-    ));
+  const onTextBoxMouseDown = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (editingTextBox === id) return;
+    setSelectedTextBox(id);
+    setSelectedSticker(null);
+    const box = textBoxes.find(t => t.id === id);
+    if (!box) return;
+    setDragging({ type: "textbox", id, offsetX: e.clientX - box.x, offsetY: e.clientY - box.y });
   };
-
-  // 드래그 끝
-  const onMouseUp = () => setDragging(null);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -123,7 +183,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           { label: "◀ 책장", fn: onBack }, null,
           { label: "기록 편집", fn: () => {} }, null,
           { label: "+ 추가", fn: onAddRecord }, null,
-          { label: decorMode ? "✅ 완료" : "🎨 꾸미기", fn: () => { setDecorMode(!decorMode); setShowStickerPanel(false); setSelectedSticker(null); } }, null,
+          { label: decorMode ? "✅ 완료" : "🎨 꾸미기", fn: () => { setDecorMode(!decorMode); setShowStickerPanel(false); setShowTextPanel(false); setSelectedSticker(null); setSelectedTextBox(null); } }, null,
           { label: "페이지", fn: () => {} },
         ] as ({ label: string; fn: () => void } | null)[]).map((item, i) => {
           if (item === null) return <div key={i} style={{ width: 1, height: 15, background: "rgba(200,169,122,0.3)", flexShrink: 0 }} />;
@@ -141,8 +201,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
       {decorMode && (
         <div className="flex items-center justify-center gap-2 mx-4 mt-2 px-3 py-2 rounded-2xl"
           style={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(200,169,122,0.3)", boxShadow: "0 2px 12px rgba(0,0,0,0.08)" }}>
-          <button
-            onClick={() => setShowStickerPanel(!showStickerPanel)}
+          <button onClick={() => { setShowStickerPanel(!showStickerPanel); setShowTextPanel(false); }}
             className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
             style={{ background: showStickerPanel ? "rgba(200,169,122,0.15)" : "transparent", border: "1px solid rgba(200,169,122,0.3)" }}>
             <span style={{ fontSize: 18 }}>😊</span>
@@ -158,8 +217,9 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
             <span style={{ fontSize: 18 }}>🖼️</span>
             <span style={{ fontSize: 9, color: "#7A7064" }}>사진</span>
           </button>
-          <button className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl"
-            style={{ border: "1px solid rgba(200,169,122,0.3)", opacity: 0.5 }}>
+          <button onClick={() => { setShowTextPanel(!showTextPanel); setShowStickerPanel(false); }}
+            className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
+            style={{ background: showTextPanel ? "rgba(200,169,122,0.15)" : "transparent", border: "1px solid rgba(200,169,122,0.3)" }}>
             <span style={{ fontSize: 18 }}>T</span>
             <span style={{ fontSize: 9, color: "#7A7064" }}>텍스트</span>
           </button>
@@ -183,6 +243,78 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
         </div>
       )}
 
+      {/* 텍스트 박스 추가 패널 */}
+      {showTextPanel && (
+        <div className="mx-4 mt-1 p-3 rounded-2xl"
+          style={{ background: "rgba(255,255,255,0.98)", border: "1px solid rgba(200,169,122,0.3)", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
+          <div style={{ fontSize: 10, color: "#7A7064", marginBottom: 8, fontWeight: 600 }}>텍스트 추가</div>
+
+          {/* 스타일 옵션 */}
+          <div className="flex flex-col gap-2 mb-2">
+
+            {/* 폰트 선택 */}
+            <div className="flex gap-1">
+              {FONT_OPTIONS.map(f => (
+                <button key={f.value} onClick={() => setNewFont(f.value)}
+                  style={{ flex: 1, padding: "4px 2px", fontSize: 9, borderRadius: 6, border: newFont === f.value ? "1.5px solid #C8A97A" : "1px solid rgba(200,169,122,0.3)", background: newFont === f.value ? "rgba(200,169,122,0.15)" : "transparent", color: "#5A5040", fontFamily: f.value, cursor: "pointer" }}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 크기 + 굵기 */}
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: 9, color: "#7A7064", flexShrink: 0 }}>크기</span>
+              <div className="flex gap-1">
+                {SIZE_OPTIONS.map(size => (
+                  <button key={size} onClick={() => setNewFontSize(size)}
+                    style={{ width: 28, height: 22, fontSize: 9, borderRadius: 6, border: newFontSize === size ? "1.5px solid #C8A97A" : "1px solid rgba(200,169,122,0.3)", background: newFontSize === size ? "rgba(200,169,122,0.15)" : "transparent", color: "#5A5040", cursor: "pointer" }}>
+                    {size}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setNewBold(!newBold)}
+                style={{ width: 28, height: 22, fontSize: 11, fontWeight: 700, borderRadius: 6, border: newBold ? "1.5px solid #C8A97A" : "1px solid rgba(200,169,122,0.3)", background: newBold ? "rgba(200,169,122,0.15)" : "transparent", color: "#5A5040", cursor: "pointer" }}>
+                B
+              </button>
+            </div>
+
+            {/* 색상 선택 */}
+            <div className="flex items-center gap-1.5">
+              <span style={{ fontSize: 9, color: "#7A7064", flexShrink: 0 }}>색상</span>
+              <div className="flex gap-1 flex-wrap">
+                {COLOR_OPTIONS.map(c => (
+                  <button key={c.value} onClick={() => setNewColor(c.value)}
+                    style={{ width: 20, height: 20, borderRadius: "50%", background: c.value, border: newColor === c.value ? "2.5px solid #C8A97A" : "2px solid rgba(255,255,255,0.8)", cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }} />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 미리보기 */}
+          <div style={{ padding: "6px 10px", background: "rgba(200,169,122,0.05)", borderRadius: 8, marginBottom: 8, minHeight: 28, fontFamily: newFont, fontSize: newFontSize, color: newColor, fontWeight: newBold ? 700 : 400 }}>
+            {newTextInput || <span style={{ color: "rgba(200,169,122,0.4)", fontSize: 10 }}>미리보기</span>}
+          </div>
+
+          <textarea
+            value={newTextInput}
+            onChange={(e) => setNewTextInput(e.target.value)}
+            placeholder="추가할 텍스트를 입력하세요"
+            style={{ width: "100%", minHeight: 50, padding: "8px 10px", border: "1.5px solid rgba(200,169,122,0.4)", borderRadius: 10, resize: "none", fontFamily: newFont, fontSize: newFontSize, color: newColor, fontWeight: newBold ? 700 : 400, outline: "none" }}
+          />
+          <div className="flex gap-2 mt-2">
+            <button onClick={addTextBox}
+              style={{ flex: 1, padding: "6px", background: "#C8A97A", color: "#fff", border: "none", borderRadius: 8, fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+              추가하기
+            </button>
+            <button onClick={() => { setShowTextPanel(false); setNewTextInput(""); }}
+              style={{ flex: 1, padding: "6px", background: "transparent", color: "#7A7064", border: "1px solid rgba(200,169,122,0.4)", borderRadius: 8, fontSize: 11, cursor: "pointer" }}>
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="text-center mt-2 mb-2">
         <span className="text-xs tracking-widest" style={{ fontFamily: "'DM Serif Display', serif", color: "#7A7064" }}>
           {book.emoji} {book.title}
@@ -194,7 +326,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
         style={{ maxHeight: 430 }}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
-        onClick={() => setSelectedSticker(null)}>
+        onClick={() => { setSelectedSticker(null); setSelectedTextBox(null); }}>
         <div className="w-full h-full rounded-lg overflow-hidden relative"
           style={{ background: "#F9F7F2", boxShadow: "-8px 0 28px rgba(0,0,0,0.07),8px 0 28px rgba(0,0,0,0.05),0 20px 40px rgba(0,0,0,0.1)", border: "1px solid rgba(229,219,197,0.8)" }}>
           <div className="absolute inset-0 pointer-events-none"
@@ -202,7 +334,6 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           <div className="absolute top-0 bottom-0" style={{ left: 26, width: 1, background: "rgba(200,169,122,0.22)" }} />
           <div className="relative w-full h-full" style={{ padding: "14px 14px 14px 32px" }}>
 
-            {/* 폴라로이드 사진들 */}
             {pg.polaroids.map((p, i) => (
               <div key={i} className="absolute" style={{ left: p.x, top: p.y, width: p.w, padding: "6px 6px 22px", background: "#fff", transform: `rotate(${p.rot}deg)`, boxShadow: "0 6px 22px rgba(0,0,0,0.16),0 1px 4px rgba(0,0,0,0.08)", zIndex: i + 1 }}>
                 <div style={{ height: Math.round(p.h * 0.78), background: p.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -212,16 +343,12 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               </div>
             ))}
 
-            {/* 텍스트 박스 */}
+            {/* 기본 텍스트 박스 */}
             <div className="absolute rounded-xl" style={{ left: pg.text.x, top: pg.text.y, maxWidth: 175, zIndex: 10 }}>
               {isEditing ? (
                 <div>
-                  <textarea
-                    value={textContent}
-                    onChange={(e) => setTextContent(e.target.value)}
-                    autoFocus
-                    style={{ width: 175, minHeight: 80, padding: "10px 12px", background: "rgba(255,255,255,0.95)", border: "1.5px solid rgba(200,169,122,0.6)", borderRadius: 12, resize: "none", fontFamily: "'Gowun Batang', serif", fontSize: 12, color: "#2A2318", lineHeight: 1.65, outline: "none" }}
-                  />
+                  <textarea value={textContent} onChange={(e) => setTextContent(e.target.value)} autoFocus
+                    style={{ width: 175, minHeight: 80, padding: "10px 12px", background: "rgba(255,255,255,0.95)", border: "1.5px solid rgba(200,169,122,0.6)", borderRadius: 12, resize: "none", fontFamily: "'Gowun Batang', serif", fontSize: 12, color: "#2A2318", lineHeight: 1.65, outline: "none" }} />
                   <div className="flex gap-1 mt-1">
                     <button onClick={saveText} disabled={saving}
                       style={{ flex: 1, padding: "4px 8px", background: "#C8A97A", color: "#fff", border: "none", borderRadius: 8, fontSize: 10, cursor: "pointer" }}>
@@ -252,21 +379,43 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               </div>
             )}
 
-            {/* 배치된 스티커들 */}
+            {/* 추가된 텍스트 박스들 */}
+            {textBoxes.map(box => (
+              <div key={box.id} className="absolute"
+                style={{ left: box.x, top: box.y, zIndex: 25, maxWidth: 160, position: "absolute" }}
+                onMouseDown={(e) => decorMode && onTextBoxMouseDown(e, box.id)}>
+                {editingTextBox === box.id ? (
+                  <textarea
+                    value={box.content}
+                    onChange={(e) => updateTextBox(box.id, e.target.value)}
+                    autoFocus
+                    onBlur={() => setEditingTextBox(null)}
+                    style={{ width: 150, minHeight: 50, padding: "6px 8px", background: "rgba(255,255,255,0.95)", border: "1.5px solid rgba(200,169,122,0.6)", borderRadius: 8, resize: "none", fontFamily: box.fontFamily, fontSize: box.fontSize, color: box.color, fontWeight: box.bold ? 700 : 400, lineHeight: 1.6, outline: "none" }}
+                  />
+                ) : (
+                  <div
+                    onDoubleClick={() => decorMode && setEditingTextBox(box.id)}
+                    style={{ padding: "6px 10px", background: "rgba(255,255,255,0.9)", backdropFilter: "blur(4px)", boxShadow: "0 2px 10px rgba(0,0,0,0.08)", borderRadius: 8, fontFamily: box.fontFamily, fontSize: box.fontSize, color: box.color, fontWeight: box.bold ? 700 : 400, lineHeight: 1.6, whiteSpace: "pre-line", cursor: decorMode ? "grab" : "default", border: selectedTextBox === box.id && decorMode ? "1.5px solid rgba(200,169,122,0.6)" : "1px dashed rgba(200,169,122,0.3)", userSelect: "none", position: "relative" }}>
+                    {box.content}
+                    {selectedTextBox === box.id && decorMode && (
+                      <button
+                        onMouseDown={(e) => { e.stopPropagation(); deleteTextBox(box.id); }}
+                        style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                        <X size={10} color="#fff" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* 스티커들 */}
             {stickers.map(sticker => (
               <div key={sticker.id}
                 onMouseDown={(e) => decorMode && onStickerMouseDown(e, sticker.id)}
                 className="absolute select-none"
-                style={{
-                  left: sticker.x, top: sticker.y,
-                  fontSize: sticker.size,
-                  cursor: decorMode ? "grab" : "default",
-                  zIndex: 20,
-                  filter: selectedSticker === sticker.id ? "drop-shadow(0 0 4px rgba(200,169,122,0.8))" : "none",
-                  userSelect: "none"
-                }}>
+                style={{ left: sticker.x, top: sticker.y, fontSize: sticker.size, cursor: decorMode ? "grab" : "default", zIndex: 20, filter: selectedSticker === sticker.id ? "drop-shadow(0 0 4px rgba(200,169,122,0.8))" : "none", userSelect: "none" }}>
                 {sticker.emoji}
-                {/* 선택됐을 때 삭제 버튼 */}
                 {selectedSticker === sticker.id && decorMode && (
                   <button
                     onMouseDown={(e) => { e.stopPropagation(); deleteSticker(sticker.id); }}
