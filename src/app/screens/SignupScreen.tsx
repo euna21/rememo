@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { AtSign, User, Mail, Lock } from "lucide-react";
 // 1. 파이어베이스 인증 도구 불러오기
-import { auth } from "../../firebase"; 
+import { auth, db } from "../../firebase"; 
+import { doc, setDoc } from "firebase/firestore";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 
 export default function SignupScreen({ onSignup, onLogin }: { onSignup: () => void; onLogin: () => void }) {
@@ -28,6 +29,12 @@ export default function SignupScreen({ onSignup, onLogin }: { onSignup: () => vo
       // 5. 파이어베이스 계정 정보에 유저가 입력한 '닉네임' 추가로 저장해주기
       await updateProfile(userCredential.user, {
         displayName: formData.nickname
+      });
+      await setDoc(doc(db, "users", userCredential.user.uid), {
+        name: formData.nickname,
+        email: formData.email,
+        id: formData.nickname, // 만약 아이디를 따로 입력받지 않는다면 닉네임을 ID로 사용
+        createdAt: new Date()
       });
 
       console.log("회원가입 완료!", userCredential.user);
