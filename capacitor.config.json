@@ -1,5 +1,13 @@
 {
   "appId": "com.myapp.rememo",
   "appName": "@figma/my-make-file# 3. 안드로이드 플랫폼 추가를 위한 패키지 설치npm install @capacitor/androidnpx cap add android",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SafeArea": {
+      "enabled": false
+    }
+  }
 }
