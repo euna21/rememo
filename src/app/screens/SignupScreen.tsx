@@ -4,6 +4,7 @@ import { AtSign, User, Mail, Lock } from "lucide-react";
 import { auth, db } from "../../firebase"; 
 import { doc, setDoc } from "firebase/firestore";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { collection, query, where, getDocs } from "firebase/firestore"; // 필요한 함수 확인
 
 export default function SignupScreen({ onSignup, onLogin }: { onSignup: () => void; onLogin: () => void }) {
   // 2. 유저가 입력하는 4가지 값을 하나의 상자(formData)에 담아서 기억하기
@@ -16,34 +17,45 @@ export default function SignupScreen({ onSignup, onLogin }: { onSignup: () => vo
 
   // 3. 가입 버튼을 눌렀을 때 실행될 로직
   const handleSignupSubmit = async () => {
-    // 빈칸이 있는지 먼저 확인
-    if (!formData.email || !formData.password || !formData.nickname) {
-      alert("모든 정보를 입력해 주세요!");
-      return;
+  // 1. 빈칸 체크
+  if (!formData.email || !formData.password || !formData.nickname || !formData.id) {
+    alert("모든 정보를 입력해 주세요!");
+    return;
+  }
+
+  try {
+    // 2. 아이디 중복 체크 로직!
+    const idQuery = query(collection(db, "users"), where("id", "==", formData.id));
+    const querySnapshot = await getDocs(idQuery);
+
+    console.log("검색한 아이디:", formData.id);
+    console.log("찾은 문서 개수:", querySnapshot.size);
+
+    if (!querySnapshot.empty) {
+      alert("이미 사용 중인 아이디입니다. 다른 아이디를 입력해주세요.");
+      return; // 여기서 가입 진행을 멈춤
     }
 
-    try {
-      // 4. 파이어베이스에 이메일과 비밀번호를 보내서 진짜 계정 만들기
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-      
-      // 5. 파이어베이스 계정 정보에 유저가 입력한 '닉네임' 추가로 저장해주기
-      await updateProfile(userCredential.user, {
-        displayName: formData.nickname
-      });
-      await setDoc(doc(db, "users", userCredential.user.uid), {
-        name: formData.nickname,
-        email: formData.email,
-        id: formData.nickname, // 만약 아이디를 따로 입력받지 않는다면 닉네임을 ID로 사용
-        createdAt: new Date()
-      });
+    // 3. 파이어베이스 계정 생성
+    const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+    
+    // 4. 프로필 저장
+    await updateProfile(userCredential.user, {
+      displayName: formData.nickname
+    });
 
-      console.log("회원가입 완료!", userCredential.user);
-      alert(`${formData.nickname}님, 환영합니다!`);
-      
-      // 6. 성공하면 네가 만들어둔 onSignup 함수를 실행해서 다음 화면으로 넘기기
-      onSignup();
+    // 5. DB 저장
+    await setDoc(doc(db, "users", userCredential.user.uid), {
+      name: formData.nickname,
+      email: formData.email,
+      id: formData.id, // 이제 formData.id를 사용!
+      createdAt: new Date()
+    });
 
-    } catch (error: any) {
+    alert(`${formData.nickname}님, 환영합니다!`);
+    onSignup();
+
+  } catch (error: any) {
       // 에러 상황별로 친절한 안내 메시지 띄우기
       if (error.code === "auth/email-already-in-use") {
         alert("이미 가입된 이메일입니다.");
