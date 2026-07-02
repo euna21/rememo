@@ -1,9 +1,9 @@
-import { ChevronLeft, ChevronRight, Camera, Play, Pause, SkipBack, SkipForward, X, Bold } from "lucide-react";
+import { ChevronLeft, ChevronRight, Camera, Play, Pause, SkipBack, SkipForward, X, Plus, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { db } from "../../firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { DIARY_PAGES, TRACKS } from "../data/mockData";
-import { Book } from "../types";
+import { Book, DiaryPageDef } from "../types";
 
 const STICKERS = [
   "🌸", "🌷", "🌼", "🌻", "🍀", "🍁", "🌿",
@@ -32,6 +32,15 @@ const COLOR_OPTIONS = [
 
 const SIZE_OPTIONS = [10, 12, 14, 16, 20];
 
+// 빈 페이지 템플릿
+const EMPTY_PAGE: DiaryPageDef = {
+  polaroids: [],
+  text: { x: 40, y: 100, content: "" },
+  date: new Date().toISOString().slice(0, 10).replace(/-/g, "."),
+  washi: null,
+  deco: null,
+};
+
 interface Sticker {
   id: string; emoji: string; x: number; y: number; size: number;
 }
@@ -47,7 +56,11 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   bgmPlaying: boolean; trackIdx: number;
   onBgmToggle: () => void; onPrevTrack: () => void; onNextTrack: () => void;
 }) {
-  const pg = DIARY_PAGES[page % DIARY_PAGES.length];
+  // 페이지 목록을 state로 관리
+  const [pages, setPages] = useState<DiaryPageDef[]>(DIARY_PAGES);
+  const [showPagePanel, setShowPagePanel] = useState(false);
+
+  const pg = pages[page % pages.length];
   const track = TRACKS[trackIdx];
 
   const [isEditing, setIsEditing] = useState(false);
@@ -64,8 +77,6 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const [selectedTextBox, setSelectedTextBox] = useState<string | null>(null);
   const [editingTextBox, setEditingTextBox] = useState<string | null>(null);
   const [newTextInput, setNewTextInput] = useState("");
-
-  // 텍스트 스타일 옵션
   const [newFontSize, setNewFontSize] = useState(12);
   const [newColor, setNewColor] = useState("#2A2318");
   const [newFont, setNewFont] = useState("'Gowun Batang', serif");
@@ -79,7 +90,32 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setEditingTextBox(null);
     setShowStickerPanel(false);
     setShowTextPanel(false);
+    setShowPagePanel(false);
+    setStickers([]);
+    setTextBoxes([]);
   }, [page]);
+
+  // 페이지 추가
+  const addPage = () => {
+    const newPages = [...pages];
+    newPages.splice(page + 1, 0, { ...EMPTY_PAGE, date: new Date().toISOString().slice(0, 10).replace(/-/g, ".") });
+    setPages(newPages);
+    setShowPagePanel(false);
+    onPageChange(page + 1);
+  };
+
+  // 페이지 삭제
+  const deletePage = () => {
+    if (pages.length <= 1) {
+      alert("페이지가 1개뿐이라 삭제할 수 없어요!");
+      return;
+    }
+    if (!confirm("이 페이지를 삭제할까요?")) return;
+    const newPages = pages.filter((_, i) => i !== page);
+    setPages(newPages);
+    setShowPagePanel(false);
+    onPageChange(Math.max(0, page - 1));
+  };
 
   const saveText = async () => {
     if (!book.id) return;
@@ -98,9 +134,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const addSticker = (emoji: string) => {
     const newSticker: Sticker = {
       id: Date.now().toString(), emoji,
-      x: 80 + Math.random() * 100,
-      y: 80 + Math.random() * 150,
-      size: 28,
+      x: 80 + Math.random() * 100, y: 80 + Math.random() * 150, size: 28,
     };
     setStickers(prev => [...prev, newSticker]);
     setShowStickerPanel(false);
@@ -115,14 +149,9 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const addTextBox = () => {
     if (!newTextInput.trim()) return;
     const newBox: TextBox = {
-      id: Date.now().toString(),
-      content: newTextInput,
-      x: 60 + Math.random() * 80,
-      y: 60 + Math.random() * 120,
-      fontSize: newFontSize,
-      color: newColor,
-      fontFamily: newFont,
-      bold: newBold,
+      id: Date.now().toString(), content: newTextInput,
+      x: 60 + Math.random() * 80, y: 60 + Math.random() * 120,
+      fontSize: newFontSize, color: newColor, fontFamily: newFont, bold: newBold,
     };
     setTextBoxes(prev => [...prev, newBox]);
     setNewTextInput("");
@@ -183,8 +212,8 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           { label: "◀ 책장", fn: onBack }, null,
           { label: "기록 편집", fn: () => {} }, null,
           { label: "+ 추가", fn: onAddRecord }, null,
-          { label: decorMode ? "✅ 완료" : "🎨 꾸미기", fn: () => { setDecorMode(!decorMode); setShowStickerPanel(false); setShowTextPanel(false); setSelectedSticker(null); setSelectedTextBox(null); } }, null,
-          { label: "페이지", fn: () => {} },
+          { label: decorMode ? "✅ 완료" : "🎨 꾸미기", fn: () => { setDecorMode(!decorMode); setShowStickerPanel(false); setShowTextPanel(false); setShowPagePanel(false); setSelectedSticker(null); setSelectedTextBox(null); } }, null,
+          { label: "📄 페이지", fn: () => { setShowPagePanel(!showPagePanel); setShowStickerPanel(false); setShowTextPanel(false); } },
         ] as ({ label: string; fn: () => void } | null)[]).map((item, i) => {
           if (item === null) return <div key={i} style={{ width: 1, height: 15, background: "rgba(200,169,122,0.3)", flexShrink: 0 }} />;
           return (
@@ -196,6 +225,31 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           );
         })}
       </div>
+
+      {/* 페이지 관리 패널 */}
+      {showPagePanel && (
+        <div className="mx-4 mt-2 p-3 rounded-2xl"
+          style={{ background: "rgba(255,255,255,0.98)", border: "1px solid rgba(200,169,122,0.3)", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
+          <div style={{ fontSize: 10, color: "#7A7064", marginBottom: 10, fontWeight: 600 }}>페이지 관리</div>
+          <div className="flex gap-2">
+            <button onClick={addPage}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl"
+              style={{ background: "rgba(200,169,122,0.1)", border: "1.5px solid rgba(200,169,122,0.4)", color: "#7A5C3A", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              <Plus size={14} />
+              현재 페이지 뒤에 추가
+            </button>
+            <button onClick={deletePage}
+              className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl"
+              style={{ background: "rgba(231,76,60,0.08)", border: "1.5px solid rgba(231,76,60,0.3)", color: "#e74c3c", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              <Trash2 size={14} />
+              삭제
+            </button>
+          </div>
+          <div style={{ fontSize: 10, color: "rgba(200,169,122,0.6)", marginTop: 8, textAlign: "center" }}>
+            현재 {page + 1} / {pages.length} 페이지
+          </div>
+        </div>
+      )}
 
       {/* 꾸미기 툴바 */}
       {decorMode && (
@@ -248,11 +302,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
         <div className="mx-4 mt-1 p-3 rounded-2xl"
           style={{ background: "rgba(255,255,255,0.98)", border: "1px solid rgba(200,169,122,0.3)", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
           <div style={{ fontSize: 10, color: "#7A7064", marginBottom: 8, fontWeight: 600 }}>텍스트 추가</div>
-
-          {/* 스타일 옵션 */}
           <div className="flex flex-col gap-2 mb-2">
-
-            {/* 폰트 선택 */}
             <div className="flex gap-1">
               {FONT_OPTIONS.map(f => (
                 <button key={f.value} onClick={() => setNewFont(f.value)}
@@ -261,8 +311,6 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
                 </button>
               ))}
             </div>
-
-            {/* 크기 + 굵기 */}
             <div className="flex items-center gap-2">
               <span style={{ fontSize: 9, color: "#7A7064", flexShrink: 0 }}>크기</span>
               <div className="flex gap-1">
@@ -278,8 +326,6 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
                 B
               </button>
             </div>
-
-            {/* 색상 선택 */}
             <div className="flex items-center gap-1.5">
               <span style={{ fontSize: 9, color: "#7A7064", flexShrink: 0 }}>색상</span>
               <div className="flex gap-1 flex-wrap">
@@ -290,27 +336,14 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               </div>
             </div>
           </div>
-
-          {/* 미리보기 */}
           <div style={{ padding: "6px 10px", background: "rgba(200,169,122,0.05)", borderRadius: 8, marginBottom: 8, minHeight: 28, fontFamily: newFont, fontSize: newFontSize, color: newColor, fontWeight: newBold ? 700 : 400 }}>
             {newTextInput || <span style={{ color: "rgba(200,169,122,0.4)", fontSize: 10 }}>미리보기</span>}
           </div>
-
-          <textarea
-            value={newTextInput}
-            onChange={(e) => setNewTextInput(e.target.value)}
-            placeholder="추가할 텍스트를 입력하세요"
-            style={{ width: "100%", minHeight: 50, padding: "8px 10px", border: "1.5px solid rgba(200,169,122,0.4)", borderRadius: 10, resize: "none", fontFamily: newFont, fontSize: newFontSize, color: newColor, fontWeight: newBold ? 700 : 400, outline: "none" }}
-          />
+          <textarea value={newTextInput} onChange={(e) => setNewTextInput(e.target.value)} placeholder="추가할 텍스트를 입력하세요"
+            style={{ width: "100%", minHeight: 50, padding: "8px 10px", border: "1.5px solid rgba(200,169,122,0.4)", borderRadius: 10, resize: "none", fontFamily: newFont, fontSize: newFontSize, color: newColor, fontWeight: newBold ? 700 : 400, outline: "none" }} />
           <div className="flex gap-2 mt-2">
-            <button onClick={addTextBox}
-              style={{ flex: 1, padding: "6px", background: "#C8A97A", color: "#fff", border: "none", borderRadius: 8, fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
-              추가하기
-            </button>
-            <button onClick={() => { setShowTextPanel(false); setNewTextInput(""); }}
-              style={{ flex: 1, padding: "6px", background: "transparent", color: "#7A7064", border: "1px solid rgba(200,169,122,0.4)", borderRadius: 8, fontSize: 11, cursor: "pointer" }}>
-              취소
-            </button>
+            <button onClick={addTextBox} style={{ flex: 1, padding: "6px", background: "#C8A97A", color: "#fff", border: "none", borderRadius: 8, fontSize: 11, cursor: "pointer", fontWeight: 600 }}>추가하기</button>
+            <button onClick={() => { setShowTextPanel(false); setNewTextInput(""); }} style={{ flex: 1, padding: "6px", background: "transparent", color: "#7A7064", border: "1px solid rgba(200,169,122,0.4)", borderRadius: 8, fontSize: 11, cursor: "pointer" }}>취소</button>
           </div>
         </div>
       )}
@@ -333,7 +366,6 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
             style={{ backgroundImage: "repeating-linear-gradient(transparent,transparent 27px,rgba(200,169,122,0.1) 28px)" }} />
           <div className="absolute top-0 bottom-0" style={{ left: 26, width: 1, background: "rgba(200,169,122,0.22)" }} />
           <div className="relative w-full h-full" style={{ padding: "14px 14px 14px 32px" }}>
-
             {pg.polaroids.map((p, i) => (
               <div key={i} className="absolute" style={{ left: p.x, top: p.y, width: p.w, padding: "6px 6px 22px", background: "#fff", transform: `rotate(${p.rot}deg)`, boxShadow: "0 6px 22px rgba(0,0,0,0.16),0 1px 4px rgba(0,0,0,0.08)", zIndex: i + 1 }}>
                 <div style={{ height: Math.round(p.h * 0.78), background: p.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -343,21 +375,16 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               </div>
             ))}
 
-            {/* 기본 텍스트 박스 */}
             <div className="absolute rounded-xl" style={{ left: pg.text.x, top: pg.text.y, maxWidth: 175, zIndex: 10 }}>
               {isEditing ? (
                 <div>
                   <textarea value={textContent} onChange={(e) => setTextContent(e.target.value)} autoFocus
                     style={{ width: 175, minHeight: 80, padding: "10px 12px", background: "rgba(255,255,255,0.95)", border: "1.5px solid rgba(200,169,122,0.6)", borderRadius: 12, resize: "none", fontFamily: "'Gowun Batang', serif", fontSize: 12, color: "#2A2318", lineHeight: 1.65, outline: "none" }} />
                   <div className="flex gap-1 mt-1">
-                    <button onClick={saveText} disabled={saving}
-                      style={{ flex: 1, padding: "4px 8px", background: "#C8A97A", color: "#fff", border: "none", borderRadius: 8, fontSize: 10, cursor: "pointer" }}>
+                    <button onClick={saveText} disabled={saving} style={{ flex: 1, padding: "4px 8px", background: "#C8A97A", color: "#fff", border: "none", borderRadius: 8, fontSize: 10, cursor: "pointer" }}>
                       {saving ? "저장 중..." : "저장"}
                     </button>
-                    <button onClick={() => { setIsEditing(false); setTextContent(pg.text.content); }}
-                      style={{ flex: 1, padding: "4px 8px", background: "transparent", color: "#7A7064", border: "1px solid rgba(200,169,122,0.4)", borderRadius: 8, fontSize: 10, cursor: "pointer" }}>
-                      취소
-                    </button>
+                    <button onClick={() => { setIsEditing(false); setTextContent(pg.text.content); }} style={{ flex: 1, padding: "4px 8px", background: "transparent", color: "#7A7064", border: "1px solid rgba(200,169,122,0.4)", borderRadius: 8, fontSize: 10, cursor: "pointer" }}>취소</button>
                   </div>
                 </div>
               ) : (
@@ -379,27 +406,19 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               </div>
             )}
 
-            {/* 추가된 텍스트 박스들 */}
             {textBoxes.map(box => (
               <div key={box.id} className="absolute"
                 style={{ left: box.x, top: box.y, zIndex: 25, maxWidth: 160, position: "absolute" }}
                 onMouseDown={(e) => decorMode && onTextBoxMouseDown(e, box.id)}>
                 {editingTextBox === box.id ? (
-                  <textarea
-                    value={box.content}
-                    onChange={(e) => updateTextBox(box.id, e.target.value)}
-                    autoFocus
-                    onBlur={() => setEditingTextBox(null)}
-                    style={{ width: 150, minHeight: 50, padding: "6px 8px", background: "rgba(255,255,255,0.95)", border: "1.5px solid rgba(200,169,122,0.6)", borderRadius: 8, resize: "none", fontFamily: box.fontFamily, fontSize: box.fontSize, color: box.color, fontWeight: box.bold ? 700 : 400, lineHeight: 1.6, outline: "none" }}
-                  />
+                  <textarea value={box.content} onChange={(e) => updateTextBox(box.id, e.target.value)} autoFocus onBlur={() => setEditingTextBox(null)}
+                    style={{ width: 150, minHeight: 50, padding: "6px 8px", background: "rgba(255,255,255,0.95)", border: "1.5px solid rgba(200,169,122,0.6)", borderRadius: 8, resize: "none", fontFamily: box.fontFamily, fontSize: box.fontSize, color: box.color, fontWeight: box.bold ? 700 : 400, lineHeight: 1.6, outline: "none" }} />
                 ) : (
-                  <div
-                    onDoubleClick={() => decorMode && setEditingTextBox(box.id)}
+                  <div onDoubleClick={() => decorMode && setEditingTextBox(box.id)}
                     style={{ padding: "6px 10px", background: "rgba(255,255,255,0.9)", backdropFilter: "blur(4px)", boxShadow: "0 2px 10px rgba(0,0,0,0.08)", borderRadius: 8, fontFamily: box.fontFamily, fontSize: box.fontSize, color: box.color, fontWeight: box.bold ? 700 : 400, lineHeight: 1.6, whiteSpace: "pre-line", cursor: decorMode ? "grab" : "default", border: selectedTextBox === box.id && decorMode ? "1.5px solid rgba(200,169,122,0.6)" : "1px dashed rgba(200,169,122,0.3)", userSelect: "none", position: "relative" }}>
                     {box.content}
                     {selectedTextBox === box.id && decorMode && (
-                      <button
-                        onMouseDown={(e) => { e.stopPropagation(); deleteTextBox(box.id); }}
+                      <button onMouseDown={(e) => { e.stopPropagation(); deleteTextBox(box.id); }}
                         style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
                         <X size={10} color="#fff" />
                       </button>
@@ -409,16 +428,13 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               </div>
             ))}
 
-            {/* 스티커들 */}
             {stickers.map(sticker => (
-              <div key={sticker.id}
-                onMouseDown={(e) => decorMode && onStickerMouseDown(e, sticker.id)}
+              <div key={sticker.id} onMouseDown={(e) => decorMode && onStickerMouseDown(e, sticker.id)}
                 className="absolute select-none"
                 style={{ left: sticker.x, top: sticker.y, fontSize: sticker.size, cursor: decorMode ? "grab" : "default", zIndex: 20, filter: selectedSticker === sticker.id ? "drop-shadow(0 0 4px rgba(200,169,122,0.8))" : "none", userSelect: "none" }}>
                 {sticker.emoji}
                 {selectedSticker === sticker.id && decorMode && (
-                  <button
-                    onMouseDown={(e) => { e.stopPropagation(); deleteSticker(sticker.id); }}
+                  <button onMouseDown={(e) => { e.stopPropagation(); deleteSticker(sticker.id); }}
                     style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
                     <X size={10} color="#fff" />
                   </button>
@@ -441,9 +457,9 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           <ChevronLeft size={16} />
         </button>
         <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: 11, letterSpacing: 2, color: "#7A7064" }}>
-          {page + 1} / {DIARY_PAGES.length}
+          {page + 1} / {pages.length}
         </span>
-        <button onClick={() => onPageChange(Math.min(DIARY_PAGES.length - 1, page + 1))} disabled={page === DIARY_PAGES.length - 1}
+        <button onClick={() => onPageChange(Math.min(pages.length - 1, page + 1))} disabled={page === pages.length - 1}
           className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-25"
           style={{ border: "1.5px solid rgba(200,169,122,0.5)", color: "#C8A97A" }}>
           <ChevronRight size={16} />
