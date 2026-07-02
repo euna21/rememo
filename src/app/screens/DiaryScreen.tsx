@@ -32,7 +32,6 @@ const COLOR_OPTIONS = [
 
 const SIZE_OPTIONS = [10, 12, 14, 16, 20];
 
-// 빈 페이지 템플릿
 const EMPTY_PAGE: DiaryPageDef = {
   polaroids: [],
   text: { x: 40, y: 100, content: "" },
@@ -50,16 +49,18 @@ interface TextBox {
   fontSize: number; color: string; fontFamily: string; bold: boolean;
 }
 
+interface PhotoBox {
+  id: string; src: string; x: number; y: number; width: number; rotation: number;
+}
+
 export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRecord, bgmPlaying, trackIdx, onBgmToggle, onPrevTrack, onNextTrack }: {
   book: Book; page: number; onPageChange: (p: number) => void;
   onBack: () => void; onAddRecord: () => void;
   bgmPlaying: boolean; trackIdx: number;
   onBgmToggle: () => void; onPrevTrack: () => void; onNextTrack: () => void;
 }) {
-  // 페이지 목록을 state로 관리
   const [pages, setPages] = useState<DiaryPageDef[]>(DIARY_PAGES);
   const [showPagePanel, setShowPagePanel] = useState(false);
-
   const pg = pages[page % pages.length];
   const track = TRACKS[trackIdx];
 
@@ -71,8 +72,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const [showTextPanel, setShowTextPanel] = useState(false);
   const [stickers, setStickers] = useState<Sticker[]>([]);
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
-  const [dragging, setDragging] = useState<{ type: "sticker" | "textbox"; id: string; offsetX: number; offsetY: number } | null>(null);
-
+  const [dragging, setDragging] = useState<{ type: "sticker" | "textbox" | "photo"; id: string; offsetX: number; offsetY: number } | null>(null);
   const [textBoxes, setTextBoxes] = useState<TextBox[]>([]);
   const [selectedTextBox, setSelectedTextBox] = useState<string | null>(null);
   const [editingTextBox, setEditingTextBox] = useState<string | null>(null);
@@ -81,6 +81,10 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const [newColor, setNewColor] = useState("#2A2318");
   const [newFont, setNewFont] = useState("'Gowun Batang', serif");
   const [newBold, setNewBold] = useState(false);
+
+  // 사진 state
+  const [photoBoxes, setPhotoBoxes] = useState<PhotoBox[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
   useEffect(() => {
     setTextContent(pg.text.content);
@@ -93,9 +97,10 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setShowPagePanel(false);
     setStickers([]);
     setTextBoxes([]);
+    setPhotoBoxes([]);
+    setSelectedPhoto(null);
   }, [page]);
 
-  // 페이지 추가
   const addPage = () => {
     const newPages = [...pages];
     newPages.splice(page + 1, 0, { ...EMPTY_PAGE, date: new Date().toISOString().slice(0, 10).replace(/-/g, ".") });
@@ -104,12 +109,8 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     onPageChange(page + 1);
   };
 
-  // 페이지 삭제
   const deletePage = () => {
-    if (pages.length <= 1) {
-      alert("페이지가 1개뿐이라 삭제할 수 없어요!");
-      return;
-    }
+    if (pages.length <= 1) { alert("페이지가 1개뿐이라 삭제할 수 없어요!"); return; }
     if (!confirm("이 페이지를 삭제할까요?")) return;
     const newPages = pages.filter((_, i) => i !== page);
     setPages(newPages);
@@ -169,15 +170,45 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setTextBoxes(prev => prev.map(t => t.id === id ? { ...t, content } : t));
   };
 
+  // 사진 업로드
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const newPhoto: PhotoBox = {
+        id: Date.now().toString(),
+        src: ev.target?.result as string,
+        x: 60 + Math.random() * 80,
+        y: 60 + Math.random() * 100,
+        width: 120,
+        rotation: Math.random() * 10 - 5,
+      };
+      setPhotoBoxes(prev => [...prev, newPhoto]);
+      setSelectedPhoto(newPhoto.id);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const deletePhoto = (id: string) => {
+    setPhotoBoxes(prev => prev.filter(p => p.id !== id));
+    setSelectedPhoto(null);
+  };
+
   const onMouseMove = (e: React.MouseEvent) => {
     if (!dragging) return;
     if (dragging.type === "sticker") {
       setStickers(prev => prev.map(s =>
         s.id === dragging.id ? { ...s, x: e.clientX - dragging.offsetX, y: e.clientY - dragging.offsetY } : s
       ));
-    } else {
+    } else if (dragging.type === "textbox") {
       setTextBoxes(prev => prev.map(t =>
         t.id === dragging.id ? { ...t, x: e.clientX - dragging.offsetX, y: e.clientY - dragging.offsetY } : t
+      ));
+    } else if (dragging.type === "photo") {
+      setPhotoBoxes(prev => prev.map(p =>
+        p.id === dragging.id ? { ...p, x: e.clientX - dragging.offsetX, y: e.clientY - dragging.offsetY } : p
       ));
     }
   };
@@ -186,8 +217,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
 
   const onStickerMouseDown = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    setSelectedSticker(id);
-    setSelectedTextBox(null);
+    setSelectedSticker(id); setSelectedTextBox(null); setSelectedPhoto(null);
     const sticker = stickers.find(s => s.id === id);
     if (!sticker) return;
     setDragging({ type: "sticker", id, offsetX: e.clientX - sticker.x, offsetY: e.clientY - sticker.y });
@@ -196,11 +226,18 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const onTextBoxMouseDown = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (editingTextBox === id) return;
-    setSelectedTextBox(id);
-    setSelectedSticker(null);
+    setSelectedTextBox(id); setSelectedSticker(null); setSelectedPhoto(null);
     const box = textBoxes.find(t => t.id === id);
     if (!box) return;
     setDragging({ type: "textbox", id, offsetX: e.clientX - box.x, offsetY: e.clientY - box.y });
+  };
+
+  const onPhotoMouseDown = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setSelectedPhoto(id); setSelectedSticker(null); setSelectedTextBox(null);
+    const photo = photoBoxes.find(p => p.id === id);
+    if (!photo) return;
+    setDragging({ type: "photo", id, offsetX: e.clientX - photo.x, offsetY: e.clientY - photo.y });
   };
 
   return (
@@ -212,7 +249,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           { label: "◀ 책장", fn: onBack }, null,
           { label: "기록 편집", fn: () => {} }, null,
           { label: "+ 추가", fn: onAddRecord }, null,
-          { label: decorMode ? "✅ 완료" : "🎨 꾸미기", fn: () => { setDecorMode(!decorMode); setShowStickerPanel(false); setShowTextPanel(false); setShowPagePanel(false); setSelectedSticker(null); setSelectedTextBox(null); } }, null,
+          { label: decorMode ? "✅ 완료" : "🎨 꾸미기", fn: () => { setDecorMode(!decorMode); setShowStickerPanel(false); setShowTextPanel(false); setShowPagePanel(false); setSelectedSticker(null); setSelectedTextBox(null); setSelectedPhoto(null); } }, null,
           { label: "📄 페이지", fn: () => { setShowPagePanel(!showPagePanel); setShowStickerPanel(false); setShowTextPanel(false); } },
         ] as ({ label: string; fn: () => void } | null)[]).map((item, i) => {
           if (item === null) return <div key={i} style={{ width: 1, height: 15, background: "rgba(200,169,122,0.3)", flexShrink: 0 }} />;
@@ -235,14 +272,12 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
             <button onClick={addPage}
               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl"
               style={{ background: "rgba(200,169,122,0.1)", border: "1.5px solid rgba(200,169,122,0.4)", color: "#7A5C3A", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              <Plus size={14} />
-              현재 페이지 뒤에 추가
+              <Plus size={14} />현재 페이지 뒤에 추가
             </button>
             <button onClick={deletePage}
               className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl"
               style={{ background: "rgba(231,76,60,0.08)", border: "1.5px solid rgba(231,76,60,0.3)", color: "#e74c3c", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              <Trash2 size={14} />
-              삭제
+              <Trash2 size={14} />삭제
             </button>
           </div>
           <div style={{ fontSize: 10, color: "rgba(200,169,122,0.6)", marginTop: 8, textAlign: "center" }}>
@@ -266,11 +301,13 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
             <span style={{ fontSize: 18 }}>✏️</span>
             <span style={{ fontSize: 9, color: "#7A7064" }}>그림판</span>
           </button>
-          <button className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl"
-            style={{ border: "1px solid rgba(200,169,122,0.3)", opacity: 0.5 }}>
+          {/* 사진 버튼 - label로 file input 연결 */}
+          <label className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl cursor-pointer"
+            style={{ border: "1px solid rgba(200,169,122,0.3)" }}>
             <span style={{ fontSize: 18 }}>🖼️</span>
             <span style={{ fontSize: 9, color: "#7A7064" }}>사진</span>
-          </button>
+            <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: "none" }} />
+          </label>
           <button onClick={() => { setShowTextPanel(!showTextPanel); setShowStickerPanel(false); }}
             className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
             style={{ background: showTextPanel ? "rgba(200,169,122,0.15)" : "transparent", border: "1px solid rgba(200,169,122,0.3)" }}>
@@ -359,13 +396,14 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
         style={{ maxHeight: 430 }}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
-        onClick={() => { setSelectedSticker(null); setSelectedTextBox(null); }}>
+        onClick={() => { setSelectedSticker(null); setSelectedTextBox(null); setSelectedPhoto(null); }}>
         <div className="w-full h-full rounded-lg overflow-hidden relative"
           style={{ background: "#F9F7F2", boxShadow: "-8px 0 28px rgba(0,0,0,0.07),8px 0 28px rgba(0,0,0,0.05),0 20px 40px rgba(0,0,0,0.1)", border: "1px solid rgba(229,219,197,0.8)" }}>
           <div className="absolute inset-0 pointer-events-none"
             style={{ backgroundImage: "repeating-linear-gradient(transparent,transparent 27px,rgba(200,169,122,0.1) 28px)" }} />
           <div className="absolute top-0 bottom-0" style={{ left: 26, width: 1, background: "rgba(200,169,122,0.22)" }} />
           <div className="relative w-full h-full" style={{ padding: "14px 14px 14px 32px" }}>
+
             {pg.polaroids.map((p, i) => (
               <div key={i} className="absolute" style={{ left: p.x, top: p.y, width: p.w, padding: "6px 6px 22px", background: "#fff", transform: `rotate(${p.rot}deg)`, boxShadow: "0 6px 22px rgba(0,0,0,0.16),0 1px 4px rgba(0,0,0,0.08)", zIndex: i + 1 }}>
                 <div style={{ height: Math.round(p.h * 0.78), background: p.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -375,6 +413,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               </div>
             ))}
 
+            {/* 기본 텍스트 박스 */}
             <div className="absolute rounded-xl" style={{ left: pg.text.x, top: pg.text.y, maxWidth: 175, zIndex: 10 }}>
               {isEditing ? (
                 <div>
@@ -406,6 +445,25 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               </div>
             )}
 
+            {/* 추가된 사진들 (폴라로이드 스타일) */}
+            {photoBoxes.map(photo => (
+              <div key={photo.id} className="absolute select-none"
+                style={{ left: photo.x, top: photo.y, width: photo.width, zIndex: 22, transform: `rotate(${photo.rotation}deg)`, cursor: decorMode ? "grab" : "default", filter: selectedPhoto === photo.id ? "drop-shadow(0 0 6px rgba(200,169,122,0.8))" : "none", position: "absolute" }}
+                onMouseDown={(e) => decorMode && onPhotoMouseDown(e, photo.id)}>
+                <div style={{ background: "#fff", padding: "5px 5px 18px", boxShadow: "0 4px 16px rgba(0,0,0,0.18)" }}>
+                  <img src={photo.src} style={{ width: "100%", display: "block", objectFit: "cover" }} />
+                </div>
+                {selectedPhoto === photo.id && decorMode && (
+                  <button
+                    onMouseDown={(e) => { e.stopPropagation(); deletePhoto(photo.id); }}
+                    style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                    <X size={10} color="#fff" />
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {/* 추가된 텍스트 박스들 */}
             {textBoxes.map(box => (
               <div key={box.id} className="absolute"
                 style={{ left: box.x, top: box.y, zIndex: 25, maxWidth: 160, position: "absolute" }}
@@ -428,6 +486,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               </div>
             ))}
 
+            {/* 스티커들 */}
             {stickers.map(sticker => (
               <div key={sticker.id} onMouseDown={(e) => decorMode && onStickerMouseDown(e, sticker.id)}
                 className="absolute select-none"
