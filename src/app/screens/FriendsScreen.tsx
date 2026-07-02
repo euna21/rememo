@@ -12,49 +12,63 @@ interface Friendship {
   members: string[];
 }
 // 닉네임을 비동기로 불러오는 작은 컴포넌트
-function FriendItem({ userId, onAccept, onDecline, isPending }: { userId: string, onAccept?: () => void, onDecline?: () => void, isPending: boolean }) {
+function FriendItem({ userId, onAccept, onDecline, onDelete, isPending }: { userId: string, onAccept?: () => void, onDecline?: () => void, onDelete?: () => void, isPending: boolean }) {
   const [nickname, setNickname] = useState("로딩중...");
 
  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        // 1. userId가 UID(문서 ID)일 경우 바로 접근
-        const userRef = doc(db, "users", userId);
-        const userSnap = await getDoc(userRef);
+  const fetchUser = async () => {
+    console.log("--- 🔍 닉네임 검색 시작 ---");
+    console.log("검색할 userId(UID):", userId);
+
+    try {
+      // 1. UID로 바로 시도
+      const userRef = doc(db, "users", userId);
+      const userSnap = await getDoc(userRef);
+      
+      if (userSnap.exists()) {
+        console.log("✅ 성공! UID로 찾은 데이터:", userSnap.data());
+        setNickname(userSnap.data().name);
+      } else {
+        console.log("❌ 실패! 해당 UID로 저장된 문서가 없습니다.");
         
-        if (userSnap.exists()) {
-          setNickname(userSnap.data().name);
+        // 2. 'id' 필드로 재검색 시도
+        console.log("--- 🔍 'id' 필드로 재검색 시도 ---");
+        const q = query(collection(db, "users"), where("id", "==", userId));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          console.log("✅ 성공! id 필드로 찾은 데이터:", querySnapshot.docs[0].data());
+          setNickname(querySnapshot.docs[0].data().name);
         } else {
-          // 2. 만약 UID로 안 찾아진다면, 'id' 필드로 다시 검색 (방어 코드)
-          const q = query(collection(db, "users"), where("id", "==", userId));
-          const querySnapshot = await getDocs(q);
-          
-          if (!querySnapshot.empty) {
-            setNickname(querySnapshot.docs[0].data().name);
-          } else {
-            setNickname("알 수 없는 사용자");
-          }
+          console.log("❌ 실패! 'id' 필드로도 찾을 수 없습니다.");
+          setNickname("알 수 없는 사용자");
         }
-      } catch (error) {
-        console.error("닉네임 불러오기 실패:", error);
-        setNickname("오류 발생");
       }
-    };
-    fetchUser();
-  }, [userId]);
+    } catch (error) {
+      console.error("에러 발생:", error);
+    }
+  };
+  fetchUser();
+}, [userId]);
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border mb-2">
-      <div className="flex-1 text-sm font-semibold">{nickname}</div>
-      {isPending && (
-        <div className="flex gap-2">
-          <button onClick={onAccept} className="w-8 h-8 rounded-full bg-[#C8A97A] flex items-center justify-center"><Check size={14} /></button>
-          <button onClick={onDecline} className="w-8 h-8 rounded-full bg-[#F0ECE4] flex items-center justify-center"><X size={14} /></button>
-        </div>
-      )}
-      {!isPending && <button className="text-[10px] px-3 py-1.5 rounded-full border">앨범 보기</button>}
-    </div>
-  );
+  <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border mb-2">
+    <div className="flex-1 text-sm font-semibold">{nickname}</div>
+    {isPending && (
+      <div className="flex gap-2">
+        <button onClick={onAccept} className="w-8 h-8 rounded-full bg-[#C8A97A] flex items-center justify-center"><Check size={14} /></button>
+        <button onClick={onDecline} className="w-8 h-8 rounded-full bg-[#F0ECE4] flex items-center justify-center"><X size={14} /></button>
+      </div>
+    )}
+    {!isPending && (
+      <div className="flex gap-2">
+        <button className="text-[10px] px-3 py-1.5 rounded-full border">앨범 보기</button>
+        {/* 삭제 버튼 추가! */}
+        <button onClick={onDelete} className="text-[10px] px-3 py-1.5 rounded-full border text-red-500 border-red-200">삭제</button>
+      </div>
+    )}
+  </div>
+);
 }
 export default function FriendsScreen({ onBack }: { onBack: () => void }) {
   const [queryId, setQueryId] = useState("");
@@ -162,11 +176,18 @@ export default function FriendsScreen({ onBack }: { onBack: () => void }) {
         {/* 친구 목록 */}
         <div className="text-[10px] uppercase mb-2" style={{ color: "#7A7064" }}>내 친구 ({friends.length})</div>
         <div className="rounded-xl overflow-hidden border bg-white">
-          {friends.map((f) => {
-            const friendId = f.senderId === currentUser?.uid ? f.receiverId : f.senderId;
-            return <FriendItem key={f.id} userId={friendId} isPending={false} />;
-            })}
-        </div>
+  {friends.map((f) => {
+    const friendId = f.senderId === currentUser?.uid ? f.receiverId : f.senderId;
+    return (
+      <FriendItem 
+        key={f.id} 
+        userId={friendId} 
+        isPending={false} 
+        onDelete={() => deleteFriendship(f.id)} // 삭제 함수 전달
+      />
+    );
+  })}
+</div>
       </div>
     </div>
   );
