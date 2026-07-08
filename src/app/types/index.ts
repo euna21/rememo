@@ -3,7 +3,7 @@ export type Screen =
   | "login" | "signup"
   | "bookshelf" | "diary"
   | "capsule" | "add"
-  | "ai" | "friends" | "newdiary";
+  | "ai" | "friends" | "newdiary" | "profile";
 
 export interface Book {
   id: string; // number → string 으로 변경!
