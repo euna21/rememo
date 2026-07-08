@@ -1,10 +1,12 @@
 import { Menu, ChevronLeft, ChevronRight, Users } from "lucide-react";
-import { BOOKS } from "../data/mockData";
 
-export default function BookshelfScreen({ bookIdx, onPrev, onNext, onOpenDiary, onMenuOpen, onFriends, onNewDiary }: {
-  bookIdx: number; onPrev: () => void; onNext: () => void;
+export default function BookshelfScreen({ bookIdx, books, onPrev, onNext, onOpenDiary, onMenuOpen, onFriends, onNewDiary }: {
+  bookIdx: number; books: any[]; onPrev: () => void; onNext: () => void;
   onOpenDiary: () => void; onMenuOpen: () => void; onFriends: () => void; onNewDiary: () => void;
 }) {
+  // Firestore에서 불러온 실제 책 목록 + 마지막에 "새 앨범 만들기" 카드 하나 붙이기
+  const displayBooks = [...books, { id: "__blank__", blank: true }];
+
   return (
     <div className="flex-1 flex flex-col">
       <div className="flex items-center justify-between px-6 pt-3 pb-1">
@@ -32,12 +34,12 @@ export default function BookshelfScreen({ bookIdx, onPrev, onNext, onOpenDiary, 
           <ChevronLeft size={18} />
         </button>
         <div className="relative flex items-center justify-center" style={{ width: 310, height: 315, transformStyle: "preserve-3d" }}>
-          {BOOKS.map((book, i) => {
+          {displayBooks.map((book, i) => {
             const off = i - bookIdx;
             if (Math.abs(off) > 1) return null;
             const active = off === 0;
             return (
-              <div key={book.id} onClick={active ? onOpenDiary : undefined}
+              <div key={book.id} onClick={active && !book.blank ? onOpenDiary : undefined}
                 style={{
                   position: "absolute", width: 200, height: 274,
                   borderRadius: active ? "5px 14px 14px 5px" : "4px 12px 12px 4px",
@@ -62,10 +64,12 @@ export default function BookshelfScreen({ bookIdx, onPrev, onNext, onOpenDiary, 
                   <>
                     <span style={{ fontSize: 28, marginBottom: 10, display: "block" }}>{book.emoji}</span>
                     <span style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 17, fontWeight: 700, color: "#F4F1EB", textShadow: "1px 2px 6px rgba(0,0,0,0.4)", lineHeight: 1.4, marginBottom: 5, display: "block" }}>{book.title}</span>
-                    <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: 10, color: "rgba(255,255,255,0.65)", letterSpacing: 3, display: "block" }}>{book.subtitle}</span>
-                    <span style={{ marginTop: 16, padding: "6px 14px", borderRadius: 20, fontSize: 11, color: "#EAE6DF", background: "rgba(0,0,0,0.22)", border: "1px solid rgba(255,255,255,0.16)", backdropFilter: "blur(6px)", display: "inline-block" }}>기록 {book.count}개</span>
+                    {book.subtitle && (
+                      <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: 10, color: "rgba(255,255,255,0.65)", letterSpacing: 3, display: "block" }}>{book.subtitle}</span>
+                    )}
+                    <span style={{ marginTop: 16, padding: "6px 14px", borderRadius: 20, fontSize: 11, color: "#EAE6DF", background: "rgba(0,0,0,0.22)", border: "1px solid rgba(255,255,255,0.16)", backdropFilter: "blur(6px)", display: "inline-block" }}>기록 {book.count ?? 0}개</span>
                     <div style={{ display: "flex", marginTop: 12 }}>
-                      {book.members.slice(0, 3).map((m, mi) => (
+                      {(book.members || []).slice(0, 3).map((m: string, mi: number) => (
                         <div key={mi} style={{ width: 24, height: 24, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.28)", background: "linear-gradient(135deg,#C8A97A,#A88550)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#1E1B16", marginLeft: mi > 0 ? -7 : 0 }}>
                           {m[0]}
                         </div>
@@ -77,13 +81,13 @@ export default function BookshelfScreen({ bookIdx, onPrev, onNext, onOpenDiary, 
             );
           })}
         </div>
-        <button onClick={onNext} disabled={bookIdx === BOOKS.length - 1}
+        <button onClick={onNext} disabled={bookIdx === displayBooks.length - 1}
           className="absolute z-20 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-0 transition-opacity"
           style={{ right: 14, background: "rgba(255,255,255,0.82)", border: "2px solid #C8A97A", color: "#C8A97A" }}>
           <ChevronRight size={18} />
         </button>
         <div className="absolute bottom-0 flex items-center gap-2">
-          {BOOKS.map((_, i) => (
+          {displayBooks.map((_, i) => (
             <div key={i} className="rounded-full transition-all duration-300"
               style={{ height: 6, width: i === bookIdx ? 22 : 6, background: i === bookIdx ? "#C8A97A" : "rgba(200,169,122,0.3)" }} />
           ))}

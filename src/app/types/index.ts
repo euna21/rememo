@@ -6,7 +6,8 @@ export type Screen =
   | "ai" | "friends" | "newdiary";
 
 export interface Book {
-  id: number; title: string; subtitle: string;
+  id: string; // number → string 으로 변경!
+  title: string; subtitle: string;
   gradient: string; emoji: string; count: number;
   members: string[]; blank?: boolean;
 }
