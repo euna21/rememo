@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Camera, Play, Pause, SkipBack, SkipForward, X, Plus, Trash2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { db } from "../../firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { DIARY_PAGES, TRACKS } from "../data/mockData";
@@ -86,7 +86,11 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const [photoBoxes, setPhotoBoxes] = useState<PhotoBox[]>([]);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
+  // 페이지 전환 직후엔 자동저장이 빈 배열로 덮어쓰지 않도록 막는 플래그
+  const isInitialLoad = useRef(true);
+
   useEffect(() => {
+    isInitialLoad.current = true;
     setTextContent(pg.text.content);
     setIsEditing(false);
     setSelectedSticker(null);
@@ -95,11 +99,36 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setShowStickerPanel(false);
     setShowTextPanel(false);
     setShowPagePanel(false);
-    setStickers([]);
-    setTextBoxes([]);
-    setPhotoBoxes([]);
+    // pg에 저장된 값이 있으면 불러오고, 없으면 빈 배열
+    setStickers((pg as any).stickers || []);
+    setTextBoxes((pg as any).textBoxes || []);
+    setPhotoBoxes((pg as any).photoBoxes || []);
     setSelectedPhoto(null);
   }, [page]);
+
+  // 스티커/텍스트박스/사진 자동저장 (변경 후 800ms 뒤 저장)
+  useEffect(() => {
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      return;
+    }
+    if (!book.id) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const bookRef = doc(db, "rooms", String(book.id));
+        await updateDoc(bookRef, {
+          [`pages.${page}.stickers`]: stickers,
+          [`pages.${page}.textBoxes`]: textBoxes,
+          [`pages.${page}.photoBoxes`]: photoBoxes,
+        });
+      } catch (e) {
+        console.error("자동 저장 실패:", e);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [stickers, textBoxes, photoBoxes]);
 
   const addPage = () => {
     const newPages = [...pages];
@@ -445,14 +474,15 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               </div>
             )}
 
-            {/* 추가된 사진들 (폴라로이드 스타일) */}
+            {/* 추가된 사진들 (틀 없이 이미지만) */}
             {photoBoxes.map(photo => (
               <div key={photo.id} className="absolute select-none"
-                style={{ left: photo.x, top: photo.y, width: photo.width, zIndex: 22, transform: `rotate(${photo.rotation}deg)`, cursor: decorMode ? "grab" : "default", filter: selectedPhoto === photo.id ? "drop-shadow(0 0 6px rgba(200,169,122,0.8))" : "none", position: "absolute" }}
+                style={{ left: photo.x, top: photo.y, width: photo.width, zIndex: 22, transform: `rotate(${photo.rotation}deg)`, cursor: decorMode ? "grab" : "default", position: "absolute" }}
                 onMouseDown={(e) => decorMode && onPhotoMouseDown(e, photo.id)}>
-                <div style={{ background: "#fff", padding: "5px 5px 18px", boxShadow: "0 4px 16px rgba(0,0,0,0.18)" }}>
-                  <img src={photo.src} style={{ width: "100%", display: "block", objectFit: "cover" }} />
-                </div>
+                <img src={photo.src} style={{
+                  width: "100%", display: "block", objectFit: "cover", borderRadius: 6,
+                  boxShadow: selectedPhoto === photo.id ? "0 0 0 2px #C8A97A, 0 6px 18px rgba(0,0,0,0.2)" : "0 6px 18px rgba(0,0,0,0.2)"
+                }} />
                 {selectedPhoto === photo.id && decorMode && (
                   <button
                     onMouseDown={(e) => { e.stopPropagation(); deletePhoto(photo.id); }}
