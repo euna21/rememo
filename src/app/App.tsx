@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Screen } from "./types";
-import { BOOKS, TRACKS } from "./data/mockData";
+import { TRACKS } from "./data/mockData"; // BOOKS는 이제 안 씀
+import { db } from "../firebase";
+import { collection, onSnapshot } from "firebase/firestore";
 
 // Components
 import StatusBar from "./components/StatusBar";
@@ -31,6 +33,20 @@ export default function App() {
   const [selTracks, setSelTracks] = useState<number[]>([]);
   const [friendQ, setFriendQ] = useState("");
   const [psEnabled, setPsEnabled] = useState(false);
+
+  // ✅ 여기 추가: Firestore rooms 실시간 구독
+  const [books, setBooks] = useState<any[]>([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "rooms"), (snapshot) => {
+      const roomList = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,          // ✅ 실제 Firestore 문서 ID
+        ...docSnap.data(),       // title, emoji, gradient, count, members, pages, roles 등
+      }));
+      setBooks(roomList);
+    });
+    return () => unsub(); // 컴포넌트 사라질 때 구독 해제
+  }, []);
 
   const toggleTrack = (i: number) =>
     setSelTracks(ts => ts.includes(i) ? ts.filter(x => x !== i) : ts.length < 3 ? [...ts, i] : ts);
@@ -84,16 +100,17 @@ export default function App() {
             {screen === "signup" && <SignupScreen onSignup={() => setScreen("bookshelf")} onLogin={() => setScreen("login")} />}
             {screen === "bookshelf" && (
               <BookshelfScreen bookIdx={bookIdx}
+                books={books}  // ✅ mock 대신 실제 데이터 전달 (BookshelfScreen도 수정 필요할 수 있음)
                 onPrev={() => setBookIdx(i => Math.max(0, i - 1))}
-                onNext={() => setBookIdx(i => Math.min(BOOKS.length - 1, i + 1))}
+                onNext={() => setBookIdx(i => Math.min(books.length - 1, i + 1))}
                 onOpenDiary={() => setScreen("diary")}
                 onMenuOpen={() => setSidebar(true)}
                 onFriends={() => setScreen("friends")}
                 onNewDiary={() => setScreen("newdiary")}
               />
             )}
-            {screen === "diary" && (
-              <DiaryScreen book={bookIdx < 3 ? BOOKS[bookIdx] : BOOKS[0]} page={diaryPage}
+            {screen === "diary" && books.length > 0 && (
+              <DiaryScreen book={books[bookIdx] || books[0]} page={diaryPage}
                 onPageChange={setDiaryPage}
                 onBack={() => setScreen("bookshelf")}
                 onAddRecord={() => setScreen("capsule")}
@@ -116,7 +133,7 @@ export default function App() {
               />
             )}
             {screen === "ai" && <AiScreen onFinish={() => setScreen("diary")} />}
-            {screen === "friends" && <FriendsScreen query={friendQ} onQuery={setFriendQ} onBack={() => setScreen("bookshelf")} />}
+            {screen === "friends" && <FriendsScreen onBack={() => setScreen("bookshelf")} />}
             {screen === "newdiary" && <NewDiaryScreen onBack={() => setScreen("bookshelf")} onCreate={() => setScreen("ai")} />}
           </div>
           

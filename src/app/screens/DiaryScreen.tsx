@@ -1,9 +1,9 @@
 import { ChevronLeft, ChevronRight, Camera, Play, Pause, SkipBack, SkipForward, X, Plus, Trash2 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { db } from "../../firebase";
-import { doc, updateDoc } from "firebase/firestore";
-import { DIARY_PAGES, TRACKS } from "../data/mockData";
-import { Book, DiaryPageDef } from "../types";
+import { doc, updateDoc, onSnapshot } from "firebase/firestore";
+import { TRACKS } from "../data/mockData";
+import { Book } from "../types";
 
 const STICKERS = [
   "🌸", "🌷", "🌼", "🌻", "🍀", "🍁", "🌿",
@@ -32,14 +32,6 @@ const COLOR_OPTIONS = [
 
 const SIZE_OPTIONS = [10, 12, 14, 16, 20];
 
-const EMPTY_PAGE: DiaryPageDef = {
-  polaroids: [],
-  text: { x: 40, y: 100, content: "" },
-  date: new Date().toISOString().slice(0, 10).replace(/-/g, "."),
-  washi: null,
-  deco: null,
-};
-
 interface Sticker {
   id: string; emoji: string; x: number; y: number; size: number;
 }
@@ -53,19 +45,50 @@ interface PhotoBox {
   id: string; src: string; x: number; y: number; width: number; rotation: number;
 }
 
+interface FirestorePage {
+  text?: string;
+  stickers?: Sticker[];
+  textBoxes?: TextBox[];
+  photoBoxes?: PhotoBox[];
+}
+
+const EMPTY_FIRESTORE_PAGE: FirestorePage = { text: "", stickers: [], textBoxes: [], photoBoxes: [] };
+
 export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRecord, bgmPlaying, trackIdx, onBgmToggle, onPrevTrack, onNextTrack }: {
   book: Book; page: number; onPageChange: (p: number) => void;
   onBack: () => void; onAddRecord: () => void;
   bgmPlaying: boolean; trackIdx: number;
   onBgmToggle: () => void; onPrevTrack: () => void; onNextTrack: () => void;
 }) {
-  const [pages, setPages] = useState<DiaryPageDef[]>(DIARY_PAGES);
+  // Firestore의 pages는 { "0": {...}, "1": {...} } 형태의 객체(map)
+  const [pagesMap, setPagesMap] = useState<Record<string, FirestorePage>>({});
   const [showPagePanel, setShowPagePanel] = useState(false);
-  const pg = pages[page % pages.length];
   const track = TRACKS[trackIdx];
 
+  // book이 바뀌면(다른 다이어리 열면) 실시간으로 pages 구독
+  useEffect(() => {
+    if (!book?.id) return;
+    const bookRef = doc(db, "rooms", String(book.id));
+    const unsub = onSnapshot(bookRef, (snap) => {
+      const data = snap.data();
+      const fetchedPages = data?.pages || {};
+      // 페이지가 하나도 없으면 빈 페이지 1개로 시작
+      if (Object.keys(fetchedPages).length === 0) {
+        setPagesMap({ "0": EMPTY_FIRESTORE_PAGE });
+      } else {
+        setPagesMap(fetchedPages);
+      }
+    });
+    return () => unsub();
+  }, [book?.id]);
+
+  // 페이지 번호(0,1,2...)를 정렬된 배열로 정리
+  const pageKeys = Object.keys(pagesMap).sort((a, b) => Number(a) - Number(b));
+  const currentKey = String(page);
+  const pg: FirestorePage = pagesMap[currentKey] || EMPTY_FIRESTORE_PAGE;
+
   const [isEditing, setIsEditing] = useState(false);
-  const [textContent, setTextContent] = useState(pg.text.content);
+  const [textContent, setTextContent] = useState(pg.text || "");
   const [saving, setSaving] = useState(false);
   const [decorMode, setDecorMode] = useState(false);
   const [showStickerPanel, setShowStickerPanel] = useState(false);
@@ -82,16 +105,15 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const [newFont, setNewFont] = useState("'Gowun Batang', serif");
   const [newBold, setNewBold] = useState(false);
 
-  // 사진 state
   const [photoBoxes, setPhotoBoxes] = useState<PhotoBox[]>([]);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
-  // 페이지 전환 직후엔 자동저장이 빈 배열로 덮어쓰지 않도록 막는 플래그
   const isInitialLoad = useRef(true);
 
+  // 페이지가 바뀌거나(page 변경) Firestore에서 데이터가 새로 들어오면 로컬 state 동기화
   useEffect(() => {
     isInitialLoad.current = true;
-    setTextContent(pg.text.content);
+    setTextContent(pg.text || "");
     setIsEditing(false);
     setSelectedSticker(null);
     setSelectedTextBox(null);
@@ -99,20 +121,19 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setShowStickerPanel(false);
     setShowTextPanel(false);
     setShowPagePanel(false);
-    // pg에 저장된 값이 있으면 불러오고, 없으면 빈 배열
-    setStickers((pg as any).stickers || []);
-    setTextBoxes((pg as any).textBoxes || []);
-    setPhotoBoxes((pg as any).photoBoxes || []);
+    setStickers(pg.stickers || []);
+    setTextBoxes(pg.textBoxes || []);
+    setPhotoBoxes(pg.photoBoxes || []);
     setSelectedPhoto(null);
-  }, [page]);
+  }, [page, pagesMap]);
 
-  // 스티커/텍스트박스/사진 자동저장 (변경 후 800ms 뒤 저장)
+  // 스티커/텍스트박스/사진 자동저장
   useEffect(() => {
     if (isInitialLoad.current) {
       isInitialLoad.current = false;
       return;
     }
-    if (!book.id) return;
+    if (!book?.id) return;
 
     const timer = setTimeout(async () => {
       try {
@@ -130,25 +151,40 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     return () => clearTimeout(timer);
   }, [stickers, textBoxes, photoBoxes]);
 
-  const addPage = () => {
-    const newPages = [...pages];
-    newPages.splice(page + 1, 0, { ...EMPTY_PAGE, date: new Date().toISOString().slice(0, 10).replace(/-/g, ".") });
-    setPages(newPages);
-    setShowPagePanel(false);
-    onPageChange(page + 1);
+  const addPage = async () => {
+    if (!book?.id) return;
+    const newPageNum = pageKeys.length; // 항상 맨 뒤에 추가
+    try {
+      const bookRef = doc(db, "rooms", String(book.id));
+      await updateDoc(bookRef, { [`pages.${newPageNum}`]: EMPTY_FIRESTORE_PAGE });
+      setShowPagePanel(false);
+      onPageChange(newPageNum);
+    } catch (e) {
+      console.error("페이지 추가 실패:", e);
+    }
   };
 
-  const deletePage = () => {
-    if (pages.length <= 1) { alert("페이지가 1개뿐이라 삭제할 수 없어요!"); return; }
+  const deletePage = async () => {
+    if (!book?.id) return;
+    if (pageKeys.length <= 1) { alert("페이지가 1개뿐이라 삭제할 수 없어요!"); return; }
     if (!confirm("이 페이지를 삭제할까요?")) return;
-    const newPages = pages.filter((_, i) => i !== page);
-    setPages(newPages);
-    setShowPagePanel(false);
-    onPageChange(Math.max(0, page - 1));
+    try {
+      const bookRef = doc(db, "rooms", String(book.id));
+      const newPagesMap = { ...pagesMap };
+      delete newPagesMap[currentKey];
+      // 남은 페이지들 번호 다시 0부터 채우기
+      const reindexed: Record<string, FirestorePage> = {};
+      Object.values(newPagesMap).forEach((p, i) => { reindexed[String(i)] = p; });
+      await updateDoc(bookRef, { pages: reindexed });
+      setShowPagePanel(false);
+      onPageChange(Math.max(0, page - 1));
+    } catch (e) {
+      console.error("페이지 삭제 실패:", e);
+    }
   };
 
   const saveText = async () => {
-    if (!book.id) return;
+    if (!book?.id) return;
     setSaving(true);
     try {
       const bookRef = doc(db, "rooms", String(book.id));
@@ -199,7 +235,6 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setTextBoxes(prev => prev.map(t => t.id === id ? { ...t, content } : t));
   };
 
-  // 사진 업로드
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -301,7 +336,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
             <button onClick={addPage}
               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl"
               style={{ background: "rgba(200,169,122,0.1)", border: "1.5px solid rgba(200,169,122,0.4)", color: "#7A5C3A", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              <Plus size={14} />현재 페이지 뒤에 추가
+              <Plus size={14} />페이지 추가
             </button>
             <button onClick={deletePage}
               className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl"
@@ -310,7 +345,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
             </button>
           </div>
           <div style={{ fontSize: 10, color: "rgba(200,169,122,0.6)", marginTop: 8, textAlign: "center" }}>
-            현재 {page + 1} / {pages.length} 페이지
+            현재 {page + 1} / {pageKeys.length} 페이지
           </div>
         </div>
       )}
@@ -330,7 +365,6 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
             <span style={{ fontSize: 18 }}>✏️</span>
             <span style={{ fontSize: 9, color: "#7A7064" }}>그림판</span>
           </button>
-          {/* 사진 버튼 - label로 file input 연결 */}
           <label className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl cursor-pointer"
             style={{ border: "1px solid rgba(200,169,122,0.3)" }}>
             <span style={{ fontSize: 18 }}>🖼️</span>
@@ -433,17 +467,8 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           <div className="absolute top-0 bottom-0" style={{ left: 26, width: 1, background: "rgba(200,169,122,0.22)" }} />
           <div className="relative w-full h-full" style={{ padding: "14px 14px 14px 32px" }}>
 
-            {pg.polaroids.map((p, i) => (
-              <div key={i} className="absolute" style={{ left: p.x, top: p.y, width: p.w, padding: "6px 6px 22px", background: "#fff", transform: `rotate(${p.rot}deg)`, boxShadow: "0 6px 22px rgba(0,0,0,0.16),0 1px 4px rgba(0,0,0,0.08)", zIndex: i + 1 }}>
-                <div style={{ height: Math.round(p.h * 0.78), background: p.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Camera size={16} color="rgba(255,255,255,0.5)" />
-                </div>
-                <div style={{ fontFamily: "'Gowun Batang', serif", fontSize: 8, color: "#4A4236", textAlign: "center", paddingTop: 5 }}>{p.caption}</div>
-              </div>
-            ))}
-
             {/* 기본 텍스트 박스 */}
-            <div className="absolute rounded-xl" style={{ left: pg.text.x, top: pg.text.y, maxWidth: 175, zIndex: 10 }}>
+            <div className="absolute rounded-xl" style={{ left: 14, top: 60, maxWidth: 175, zIndex: 10 }}>
               {isEditing ? (
                 <div>
                   <textarea value={textContent} onChange={(e) => setTextContent(e.target.value)} autoFocus
@@ -452,7 +477,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
                     <button onClick={saveText} disabled={saving} style={{ flex: 1, padding: "4px 8px", background: "#C8A97A", color: "#fff", border: "none", borderRadius: 8, fontSize: 10, cursor: "pointer" }}>
                       {saving ? "저장 중..." : "저장"}
                     </button>
-                    <button onClick={() => { setIsEditing(false); setTextContent(pg.text.content); }} style={{ flex: 1, padding: "4px 8px", background: "transparent", color: "#7A7064", border: "1px solid rgba(200,169,122,0.4)", borderRadius: 8, fontSize: 10, cursor: "pointer" }}>취소</button>
+                    <button onClick={() => { setIsEditing(false); setTextContent(pg.text || ""); }} style={{ flex: 1, padding: "4px 8px", background: "transparent", color: "#7A7064", border: "1px solid rgba(200,169,122,0.4)", borderRadius: 8, fontSize: 10, cursor: "pointer" }}>취소</button>
                   </div>
                 </div>
               ) : (
@@ -463,18 +488,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
               )}
             </div>
 
-            {pg.washi && (
-              <div className="absolute flex items-center justify-center" style={{ left: pg.washi.x, top: pg.washi.y, padding: "0 10px", height: 17, background: pg.washi.color, borderRadius: 2, transform: `rotate(${pg.washi.rot}deg)`, fontFamily: "'DM Serif Display', serif", fontSize: 8, color: "#fff", letterSpacing: 1.5, whiteSpace: "nowrap", zIndex: 5 }}>
-                {pg.washi.text}
-              </div>
-            )}
-            {pg.deco && (
-              <div className="absolute pointer-events-none select-none" style={{ left: pg.deco.x, top: pg.deco.y, fontSize: 20, opacity: 0.75, zIndex: 6 }}>
-                {pg.deco.emoji}
-              </div>
-            )}
-
-            {/* 추가된 사진들 (틀 없이 이미지만) */}
+            {/* 추가된 사진들 (틀 없이) */}
             {photoBoxes.map(photo => (
               <div key={photo.id} className="absolute select-none"
                 style={{ left: photo.x, top: photo.y, width: photo.width, zIndex: 22, transform: `rotate(${photo.rotation}deg)`, cursor: decorMode ? "grab" : "default", position: "absolute" }}
@@ -530,10 +544,6 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
                 )}
               </div>
             ))}
-
-            <div className="absolute bottom-3 right-4" style={{ fontFamily: "'DM Serif Display', serif", fontSize: 10, color: "rgba(120,100,80,0.48)", letterSpacing: 2 }}>
-              {pg.date}
-            </div>
           </div>
         </div>
       </div>
@@ -546,9 +556,9 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           <ChevronLeft size={16} />
         </button>
         <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: 11, letterSpacing: 2, color: "#7A7064" }}>
-          {page + 1} / {pages.length}
+          {page + 1} / {pageKeys.length}
         </span>
-        <button onClick={() => onPageChange(Math.min(pages.length - 1, page + 1))} disabled={page === pages.length - 1}
+        <button onClick={() => onPageChange(Math.min(pageKeys.length - 1, page + 1))} disabled={page === pageKeys.length - 1}
           className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-25"
           style={{ border: "1.5px solid rgba(200,169,122,0.5)", color: "#C8A97A" }}>
           <ChevronRight size={16} />
