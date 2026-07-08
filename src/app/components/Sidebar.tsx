@@ -78,6 +78,7 @@ export default function Sidebar({ activeScreen, onClose, onNavigate }: {
         </div>
         <nav className="flex-1 pt-6"> {/* 상단 여백을 살짝 더 주어서 분리감을 줬어 */}
   {[
+    { icon: "👤", label: "내 프로필", screen: "profile" as Screen },
     { icon: "📚", label: "나의 책장", screen: "bookshelf" as Screen },
     { icon: "👥", label: "친구 관리", screen: "friends" as Screen, badge: pendingCount },
     { icon: "🔗", label: "초대 코드로 참여", screen: null as Screen | null },

@@ -18,6 +18,8 @@ import AddScreen from "./screens/AddScreen";
 import AiScreen from "./screens/AiScreen";
 import FriendsScreen from "./screens/FriendsScreen";
 import NewDiaryScreen from "./screens/NewDiaryScreen";
+import ProfileScreen from "./screens/ProfileScreen";
+
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
@@ -135,6 +137,7 @@ export default function App() {
             {screen === "ai" && <AiScreen onFinish={() => setScreen("diary")} />}
             {screen === "friends" && <FriendsScreen onBack={() => setScreen("bookshelf")} />}
             {screen === "newdiary" && <NewDiaryScreen onBack={() => setScreen("bookshelf")} onCreate={() => setScreen("ai")} />}
+            {screen === "profile" && (<ProfileScreen onBack={() => setScreen("bookshelf")} />)}
           </div>
           
           <div className="absolute rounded-full" style={{ bottom: 8, left: "50%", transform: "translateX(-50%)", width: 130, height: 5, background: isDarkScreen ? "rgba(200,169,122,0.2)" : "rgba(42,35,24,0.18)" }} />
