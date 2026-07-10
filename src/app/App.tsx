@@ -1,13 +1,17 @@
 import { useState, useEffect } from "react";
-import { Screen } from "./types";
+import { Screen } from "./types"; // types.ts -> index.ts
 import { TRACKS } from "./data/mockData";
-import { db, auth } from "../firebase"; // ✅ auth 추가
+import { db, auth } from "../firebase";
 import { collection, onSnapshot } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth"; // ✅ 자동 로그인용 함수 추가
+import { onAuthStateChanged } from "firebase/auth";
+
+// 💡 1단계에서 분리한 CSS 불러오기
+import "./App.css";
 
 // Components
 import StatusBar from "./components/StatusBar";
 import Sidebar from "./components/Sidebar";
+import BottomNav from "./components/BottomNav"; // 💡 3단계에서 분리한 하단 바 불러오기
 
 // Screens
 import LoginScreen from "./screens/LoginScreen";
@@ -23,7 +27,7 @@ import ProfileScreen from "./screens/ProfileScreen";
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
-  const [isAuthLoading, setIsAuthLoading] = useState(true); // ✅ 자동 로그인 로딩 상태 추가
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [sidebar, setSidebar] = useState(false);
   const [bookIdx, setBookIdx] = useState(0);
   const [diaryPage, setDiaryPage] = useState(0);
@@ -38,21 +42,15 @@ export default function App() {
   const [psEnabled, setPsEnabled] = useState(false);
   const [books, setBooks] = useState<any[]>([]);
 
-  // 🌟 1. 자동 로그인 감지 useEffect
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setScreen("bookshelf"); // 로그인 되어있으면 책장으로
-      } else {
-        setScreen("login"); // 아니면 로그인 화면으로
-      }
-      setIsAuthLoading(false); // 로딩 완료
+      if (user) setScreen("bookshelf");
+      else setScreen("login");
+      setIsAuthLoading(false);
     });
-
     return () => unsubscribe();
   }, []);
 
-  // 🌟 2. Firestore 데이터 구독 useEffect
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "rooms"), (snapshot) => {
       const roomList = snapshot.docs.map(docSnap => ({
@@ -69,15 +67,7 @@ export default function App() {
 
   const isDarkScreen = screen === "login" || screen === "signup" || screen === "ai";
 
-  const NAV: { label: string; s: Screen }[] = [
-    { label: "로그인", s: "login" }, { label: "회원가입", s: "signup" },
-    { label: "책장", s: "bookshelf" }, { label: "다이어리", s: "diary" },
-    { label: "캡슐", s: "capsule" }, { label: "기록추가", s: "add" },
-    { label: "AI생성", s: "ai" }, { label: "친구", s: "friends" },
-    { label: "새다이어리", s: "newdiary" },
-  ];
-
-  // 🌟 3. 깜빡임 방지용 로딩 UI
+  // 깜빡임 방지용 로딩 UI
   if (isAuthLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center py-8 px-6" 
@@ -92,12 +82,6 @@ export default function App() {
   return (
     <div className="min-h-screen flex items-center justify-center py-8 px-6"
       style={{ background: "radial-gradient(ellipse at 45% 35%,#C8C3B6 0%,#A8A39A 100%)", fontFamily: "'Noto Sans KR', sans-serif" }}>
-      <style>{`
-        @keyframes capsuleShake { 0%,100%{transform:translateX(0)} 15%,45%,75%{transform:translateX(-8px) rotate(-3deg)} 30%,60%,90%{transform:translateX(8px) rotate(3deg)} }
-        @keyframes pulseFade { 0%,100%{opacity:0.45} 50%{opacity:1} }
-        @keyframes floatUp { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
-        .no-scroll::-webkit-scrollbar{display:none}
-      `}</style>
       
       <div className="flex flex-col items-center gap-4">
         <p className="text-[11px] tracking-[5px] uppercase" style={{ fontFamily: "'DM Serif Display', serif", color: "#5A554E" }}>
@@ -148,24 +132,9 @@ export default function App() {
           <div className="absolute rounded-full" style={{ bottom: 8, left: "50%", transform: "translateX(-50%)", width: 130, height: 5, background: isDarkScreen ? "rgba(200,169,122,0.2)" : "rgba(42,35,24,0.18)" }} />
         </div>
         
-        {/* Nav pills */}
-        <div className="flex flex-col items-center gap-1.5">
-          {[NAV.slice(0, 4), NAV.slice(4, 7), NAV.slice(7)].map((row, ri) => (
-            <div key={ri} className="flex gap-1.5">
-              {row.map(({ label, s }) => (
-                <button key={s} onClick={() => setScreen(s)}
-                  className="px-3 py-1.5 text-[11px] rounded-full transition-all"
-                  style={{
-                    background: screen === s ? "#2A2318" : "rgba(42,35,24,0.12)",
-                    color: screen === s ? "#F4F1EB" : "#6A6560",
-                    fontFamily: "'DM Serif Display', serif", letterSpacing: "0.5px",
-                  }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
+        {/* 💡 3단계에서 분리한 하단 네비게이션 컴포넌트 렌더링! */}
+        <BottomNav screen={screen} setScreen={setScreen} />
+        
       </div>
     </div>
   );
