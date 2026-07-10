@@ -104,7 +104,7 @@ export default function App() {
               <BookshelfScreen bookIdx={bookIdx}
                 books={books}  // ✅ mock 대신 실제 데이터 전달 (BookshelfScreen도 수정 필요할 수 있음)
                 onPrev={() => setBookIdx(i => Math.max(0, i - 1))}
-                onNext={() => setBookIdx(i => Math.min(books.length - 1, i + 1))}
+                onNext={() => setBookIdx(i => Math.min(books.length, i + 1))}
                 onOpenDiary={() => setScreen("diary")}
                 onMenuOpen={() => setSidebar(true)}
                 onFriends={() => setScreen("friends")}
@@ -136,7 +136,7 @@ export default function App() {
             )}
             {screen === "ai" && <AiScreen onFinish={() => setScreen("diary")} />}
             {screen === "friends" && <FriendsScreen onBack={() => setScreen("bookshelf")} />}
-            {screen === "newdiary" && <NewDiaryScreen onBack={() => setScreen("bookshelf")} onCreate={() => setScreen("ai")} />}
+            {screen === "newdiary" && <NewDiaryScreen onBack={() => setScreen("bookshelf")} onCreate={() => setScreen("capsule")} />}
             {screen === "profile" && (<ProfileScreen onBack={() => setScreen("bookshelf")} />)}
           </div>
           
