@@ -1,17 +1,25 @@
 import { useState } from "react";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
-// 1. 파이어베이스 인증 도구와 로그인 함수 불러오기
+// 1. 파이어베이스 인증 도구와 지속성 함수 추가 불러오기 🌟
 import { auth } from "../../firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { 
+  signInWithEmailAndPassword, 
+  setPersistence, 
+  browserLocalPersistence, 
+  inMemoryPersistence 
+} from "firebase/auth";
 
 export default function LoginScreen({ onLogin, onSignup }: { onLogin: () => void; onSignup: () => void }) {
   const [showPw, setShowPw] = useState(false);
   
-  // 2. 유저가 입력할 이메일과 비밀번호를 기억할 상태값 추가
+  // 2. 유저가 입력할 이메일과 비밀번호를 기억할 상태값
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  
+  // 3. 자동 로그인 체크 여부를 기억할 상태값 추가 (기본값 false) 🌟
+  const [keepLoggedIn, setKeepLoggedIn] = useState(false);
 
-  // 3. 로그인 버튼을 눌렀을 때 실행될 함수
+  // 4. 로그인 버튼을 눌렀을 때 실행될 함수
   const handleLoginSubmit = async () => {
     // 빈칸 확인
     if (!email || !password) {
@@ -20,11 +28,15 @@ export default function LoginScreen({ onLogin, onSignup }: { onLogin: () => void
     }
 
     try {
-      // 4. 파이어베이스에 로그인 요청
+      // 🌟 체크 여부에 따라 파이어베이스 기억력(지속성) 설정 적용!
+      const persistence = keepLoggedIn ? browserLocalPersistence : inMemoryPersistence;
+      await setPersistence(auth, persistence);
+
+      // 파이어베이스에 로그인 요청
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       console.log("로그인 성공!", userCredential.user);
       
-      // 5. 로그인 성공 시 메인 화면(다이어리)으로 이동하는 함수 실행
+      // 로그인 성공 시 메인 화면(다이어리)으로 이동하는 함수 실행
       onLogin();
 
     } catch (error: any) {
@@ -53,6 +65,7 @@ export default function LoginScreen({ onLogin, onSignup }: { onLogin: () => void
           <div style={{ width: "62%", height: 8, background: "linear-gradient(90deg,#7B5C10,#D4A843,#7B5C10)", borderRadius: 4 }} />
         </div>
       </div>
+      
       {/* Form card */}
       <div style={{ background: "#F4F1EB", borderRadius: "28px 28px 0 0", padding: "28px 24px 40px", boxShadow: "0 -20px 60px rgba(0,0,0,0.3)" }}>
         <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, color: "#2A2318", marginBottom: 4 }}>시작하기</h2>
@@ -69,7 +82,6 @@ export default function LoginScreen({ onLogin, onSignup }: { onLogin: () => void
               <input 
                 type={f.type} 
                 placeholder={f.placeholder} 
-                // 6. 이메일 상태값 연결
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-xl outline-none"
@@ -80,14 +92,13 @@ export default function LoginScreen({ onLogin, onSignup }: { onLogin: () => void
         ))}
         
         {/* 비밀번호 입력 영역 */}
-        <div className="mb-5">
+        <div className="mb-3">
           <label className="block mb-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: "#7A7064" }}>비밀번호</label>
           <div className="relative">
             <div className="absolute flex items-center" style={{ left: 13, top: "50%", transform: "translateY(-50%)" }}><Lock size={14} color="#B0A898" /></div>
             <input 
               type={showPw ? "text" : "password"} 
               placeholder="비밀번호 입력" 
-              // 7. 비밀번호 상태값 연결
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-xl outline-none"
@@ -98,8 +109,26 @@ export default function LoginScreen({ onLogin, onSignup }: { onLogin: () => void
             </button>
           </div>
         </div>
+
+        {/* 🌟 자동 로그인 체크박스 추가 영역 */}
+        <div className="flex items-center gap-2 mt-1 mb-5 px-1">
+          <input
+            type="checkbox"
+            id="keepLoggedIn"
+            checked={keepLoggedIn}
+            onChange={(e) => setKeepLoggedIn(e.target.checked)}
+            className="w-4 h-4 cursor-pointer rounded border-[#D5D0C5]"
+            style={{ accentColor: "#4A3F33" }}
+          />
+          <label 
+            htmlFor="keepLoggedIn" 
+            className="text-xs text-[#7A7064] cursor-pointer select-none"
+          >
+            자동 로그인
+          </label>
+        </div>
         
-        {/* 8. 버튼 클릭 시 handleLoginSubmit 실행되도록 변경 */}
+        {/* 시작하기 버튼 */}
         <button onClick={handleLoginSubmit} className="w-full py-3.5 rounded-[14px] font-bold text-sm mb-4 transition-transform active:scale-[0.98]"
           style={{ background: "linear-gradient(135deg,#6B5D4D,#4A3F33)", color: "#F4F1EB", boxShadow: "0 6px 20px rgba(0,0,0,0.16)", fontFamily: "'Noto Sans KR', sans-serif" }}>
           시작하기
