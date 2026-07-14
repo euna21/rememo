@@ -71,8 +71,23 @@ export default function App() {
     return (
       <div className="min-h-screen flex items-center justify-center py-8 px-6" 
            style={{ background: "radial-gradient(ellipse at 45% 35%,#C8C3B6 0%,#A8A39A 100%)" }}>
-        <p className="text-[12px] tracking-[5px] text-[#5A554E]" style={{ fontFamily: "'DM Serif Display', serif" }}>
-          ARCHIVE LOADING...
+        
+        <style>
+          {`
+            @keyframes strongPulse {
+              0%, 100% { opacity: 1; transform: scale(1); }
+              50% { opacity: 0.2; transform: scale(0.98); }
+            }
+          `}
+        </style>
+
+        {/* 🌟 텍스트를 're:memo'로 바꾸고, 글씨 크기(text-[28px])를 시원하게 키웠어! */}
+        <p className="text-[28px] tracking-[6px] text-[#5A554E]" 
+           style={{ 
+             fontFamily: "'DM Serif Display', serif",
+             animation: "strongPulse 1.5s ease-in-out infinite" 
+           }}>
+          re:memo
         </p>
       </div>
     );
