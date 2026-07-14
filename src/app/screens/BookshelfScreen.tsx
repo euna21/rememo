@@ -39,7 +39,7 @@ export default function BookshelfScreen({ bookIdx, books, onPrev, onNext, onOpen
             if (Math.abs(off) > 1) return null;
             const active = off === 0;
             return (
-              <div key={book.id} onClick={active && !book.blank ? onOpenDiary : undefined}
+              <div key={book.id} onClick={active ? (book.blank ? onNewDiary : onOpenDiary) : undefined}
                 style={{
                   position: "absolute", width: 200, height: 274,
                   borderRadius: active ? "5px 14px 14px 5px" : "4px 12px 12px 4px",
@@ -58,7 +58,7 @@ export default function BookshelfScreen({ bookIdx, books, onPrev, onNext, onOpen
                 {book.blank ? (
                   <>
                     <span style={{ fontSize: 36, color: "#C8A97A", marginBottom: 12, display: "block" }}>＋</span>
-                    <span onClick={onNewDiary} style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 13, color: "#A8A095" }}>새 앨범 만들기</span>
+                    <span style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 13, color: "#A8A095" }}>새 앨범 만들기</span>
                   </>
                 ) : (
                   <>

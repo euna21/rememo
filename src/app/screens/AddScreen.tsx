@@ -1,7 +1,9 @@
+// src/app/screens/AddScreen.tsx
 import { Camera, Search, X, Check, ChevronLeft } from "lucide-react";
 import SectionLabel from "../components/SectionLabel";
 import { PS_CONCEPTS, TRACKS } from "../data/mockData";
-
+import { roomState } from "../roomState";
+import { auth } from "../../firebase";
 
 export default function AddScreen({ text, onText, photoAdded, onPhoto, concept, onConcept, musicQ, onMusicQ, selTracks, onTrackToggle, onBack, onSave, psEnabled, onPsToggle }: {
   text: string; onText: (v: string) => void;
@@ -27,8 +29,14 @@ export default function AddScreen({ text, onText, photoAdded, onPhoto, concept, 
         {/* Role */}
         <div className="rounded-xl p-3.5 mb-4 text-center" style={{ border: "1.5px solid rgba(200,169,122,0.35)", background: "rgba(200,169,122,0.05)" }}>
           <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#7A7064", fontWeight: 600 }}>작성 역할</div>
-          <div className="text-lg font-bold" style={{ fontFamily: "'Noto Serif KR', serif", color: "#A88550" }}>🔭 관찰자</div>
-          <div className="text-xs mt-1" style={{ color: "#7A7064" }}>이지수 · @jisoo_l</div>
+          <div className="text-lg font-bold" style={{ fontFamily: "'Noto Serif KR', serif", color: "#A88550" }}>
+            {roomState.myRoles.length > 0
+              ? roomState.myRoles.map(r => `${r.icon} ${r.name}`).join(" · ")
+              : "역할 미배정"}
+          </div>
+          <div className="text-xs mt-1" style={{ color: "#7A7064" }}>
+            {auth.currentUser?.displayName || "나"} · @{auth.currentUser?.uid?.slice(0, 8) ?? "me"}
+          </div>
         </div>
         {/* Photo upload */}
         <SectionLabel>사진 업로드 + AI 보정</SectionLabel>

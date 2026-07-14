@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Camera, Play, Pause, SkipBack, SkipForward, X, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Play, Pause, SkipBack, SkipForward, X, Plus, Trash2, Palette, RotateCw, Maximize2 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { db } from "../../firebase";
 import { doc, updateDoc, onSnapshot } from "firebase/firestore";
@@ -21,6 +21,7 @@ const FONT_OPTIONS = [
 
 const COLOR_OPTIONS = [
   { label: "검정", value: "#2A2318" },
+  { label: "흰색", value: "#FFFFFF" },
   { label: "갈색", value: "#7A5C3A" },
   { label: "골드", value: "#C8A97A" },
   { label: "빨강", value: "#C0392B" },
@@ -30,19 +31,41 @@ const COLOR_OPTIONS = [
   { label: "회색", value: "#7F8C8D" },
 ];
 
+const PALETTE_6_COLORS = ["#FFFFFF", "#C0392B", "#F1C40F", "#27AE60", "#2980B9", "#2A2318"];
+
 const SIZE_OPTIONS = [10, 12, 14, 16, 20];
 
+const SHAPE_OPTIONS = [
+  { label: "각진", value: 4 },
+  { label: "둥근", value: 14 },
+  { label: "완전둥근", value: 999 },
+];
+
 interface Sticker {
-  id: string; emoji: string; x: number; y: number; size: number;
+  id: string; emoji: string; x: number; y: number; size: number; rotation: number;
 }
 
 interface TextBox {
   id: string; content: string; x: number; y: number;
   fontSize: number; color: string; fontFamily: string; bold: boolean;
+  bgColor: string; borderColor: string; borderWidth: number; borderRadius: number;
 }
 
 interface PhotoBox {
   id: string; src: string; x: number; y: number; width: number; rotation: number;
+  borderWidth: number; borderColor: string;
+}
+
+interface LinePoint {
+  x: number; y: number;
+}
+
+interface LineStroke {
+  id: string;
+  points: LinePoint[];
+  color: string;
+  width: number;
+  mode: "pen" | "highlighter" | "neon" | "pencil" | "eraser";
 }
 
 interface FirestorePage {
@@ -50,9 +73,12 @@ interface FirestorePage {
   stickers?: Sticker[];
   textBoxes?: TextBox[];
   photoBoxes?: PhotoBox[];
+  lines?: LineStroke[];
 }
 
-const EMPTY_FIRESTORE_PAGE: FirestorePage = { text: "", stickers: [], textBoxes: [], photoBoxes: [] };
+const EMPTY_FIRESTORE_PAGE: FirestorePage = { text: "", stickers: [], textBoxes: [], photoBoxes: [], lines: [] };
+
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
 export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRecord, bgmPlaying, trackIdx, onBgmToggle, onPrevTrack, onNextTrack }: {
   book: Book; page: number; onPageChange: (p: number) => void;
@@ -60,19 +86,16 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   bgmPlaying: boolean; trackIdx: number;
   onBgmToggle: () => void; onPrevTrack: () => void; onNextTrack: () => void;
 }) {
-  // Firestore의 pages는 { "0": {...}, "1": {...} } 형태의 객체(map)
   const [pagesMap, setPagesMap] = useState<Record<string, FirestorePage>>({});
   const [showPagePanel, setShowPagePanel] = useState(false);
   const track = TRACKS[trackIdx];
 
-  // book이 바뀌면(다른 다이어리 열면) 실시간으로 pages 구독
   useEffect(() => {
     if (!book?.id) return;
     const bookRef = doc(db, "rooms", String(book.id));
     const unsub = onSnapshot(bookRef, (snap) => {
       const data = snap.data();
       const fetchedPages = data?.pages || {};
-      // 페이지가 하나도 없으면 빈 페이지 1개로 시작
       if (Object.keys(fetchedPages).length === 0) {
         setPagesMap({ "0": EMPTY_FIRESTORE_PAGE });
       } else {
@@ -82,7 +105,6 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     return () => unsub();
   }, [book?.id]);
 
-  // 페이지 번호(0,1,2...)를 정렬된 배열로 정리
   const pageKeys = Object.keys(pagesMap).sort((a, b) => Number(a) - Number(b));
   const currentKey = String(page);
   const pg: FirestorePage = pagesMap[currentKey] || EMPTY_FIRESTORE_PAGE;
@@ -90,12 +112,25 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const [isEditing, setIsEditing] = useState(false);
   const [textContent, setTextContent] = useState(pg.text || "");
   const [saving, setSaving] = useState(false);
+  const [savingDecor, setSavingDecor] = useState(false);
   const [decorMode, setDecorMode] = useState(false);
   const [showStickerPanel, setShowStickerPanel] = useState(false);
   const [showTextPanel, setShowTextPanel] = useState(false);
+  const [showDrawingPanel, setShowDrawingPanel] = useState(false);
+
+  // 펜 기능 관련 상태
+  const [lines, setLines] = useState<LineStroke[]>([]);
+  const [drawingTool, setDrawingTool] = useState<"pen" | "highlighter" | "neon" | "pencil" | "eraser">("pen");
+  const [brushColor, setBrushColor] = useState("#2A2318");
+  const [brushWidth, setBrushWidth] = useState(4);
+  const [isStrokeEraserMode, setIsStrokeEraserMode] = useState(true);
+
   const [stickers, setStickers] = useState<Sticker[]>([]);
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
   const [dragging, setDragging] = useState<{ type: "sticker" | "textbox" | "photo"; id: string; offsetX: number; offsetY: number } | null>(null);
+  // 크기조절/회전 드래그 전용
+  const [transformDrag, setTransformDrag] = useState<{ type: "resize" | "rotate"; target: "sticker" | "photo"; id: string } | null>(null);
+
   const [textBoxes, setTextBoxes] = useState<TextBox[]>([]);
   const [selectedTextBox, setSelectedTextBox] = useState<string | null>(null);
   const [editingTextBox, setEditingTextBox] = useState<string | null>(null);
@@ -108,11 +143,14 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const [photoBoxes, setPhotoBoxes] = useState<PhotoBox[]>([]);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
-  const isInitialLoad = useRef(true);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingRef = useRef(false);
+  const currentPointsRef = useRef<LinePoint[]>([]);
+  // 다이어리 페이지 영역 기준 좌표를 계산하기 위한 ref (회전/크기조절 계산에 필수)
+  const pageRef = useRef<HTMLDivElement | null>(null);
 
-  // 페이지가 바뀌거나(page 변경) Firestore에서 데이터가 새로 들어오면 로컬 state 동기화
+  // 페이지가 바뀌거나 Firestore에서 새 데이터가 오면 로컬 state 동기화
   useEffect(() => {
-    isInitialLoad.current = true;
     setTextContent(pg.text || "");
     setIsEditing(false);
     setSelectedSticker(null);
@@ -121,39 +159,174 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setShowStickerPanel(false);
     setShowTextPanel(false);
     setShowPagePanel(false);
-    setStickers(pg.stickers || []);
-    setTextBoxes(pg.textBoxes || []);
-    setPhotoBoxes(pg.photoBoxes || []);
+    setShowDrawingPanel(false);
+    setStickers((pg.stickers || []).map(s => ({ ...s, rotation: s.rotation ?? 0 })));
+    setTextBoxes((pg.textBoxes || []).map(t => ({
+      ...t,
+      bgColor: t.bgColor ?? "rgba(255,255,255,0.9)",
+      borderColor: t.borderColor ?? "#C8A97A",
+      borderWidth: t.borderWidth ?? 0,
+      borderRadius: t.borderRadius ?? 8,
+    })));
+    setPhotoBoxes((pg.photoBoxes || []).map(p => ({
+      ...p,
+      borderWidth: p.borderWidth ?? 0,
+      borderColor: p.borderColor ?? "#FFFFFF",
+    })));
+    setLines(pg.lines || []);
     setSelectedPhoto(null);
   }, [page, pagesMap]);
 
-  // 스티커/텍스트박스/사진 자동저장
+  // 캔버스 렌더링
   useEffect(() => {
-    if (isInitialLoad.current) {
-      isInitialLoad.current = false;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    lines.forEach((line) => {
+      if (line.points.length < 1) return;
+      ctx.save();
+      ctx.beginPath();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      if (line.mode === "eraser") {
+        ctx.strokeStyle = "#F9F7F2";
+        ctx.lineWidth = line.width;
+        ctx.globalAlpha = 1.0;
+      } else {
+        ctx.strokeStyle = line.color;
+        ctx.lineWidth = line.width;
+
+        if (line.mode === "highlighter") {
+          ctx.globalAlpha = 0.4;
+          ctx.lineCap = "square";
+        } else if (line.mode === "neon") {
+          ctx.globalAlpha = 1.0;
+          ctx.shadowBlur = line.width * 1.5;
+          ctx.shadowColor = line.color;
+        } else if (line.mode === "pencil") {
+          ctx.globalAlpha = 0.65;
+        } else {
+          ctx.globalAlpha = 1.0;
+        }
+      }
+
+      ctx.moveTo(line.points[0].x, line.points[0].y);
+      for (let i = 1; i < line.points.length; i++) {
+        ctx.lineTo(line.points[i].x, line.points[i].y);
+      }
+
+      if (line.mode === "pencil") {
+        ctx.stroke();
+        ctx.fillStyle = line.color;
+        for (let i = 0; i < line.points.length; i += 2) {
+          ctx.fillRect(line.points[i].x + (Math.random() * 2 - 1), line.points[i].y + (Math.random() * 2 - 1), 1.5, 1.5);
+        }
+      } else {
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }, [lines, showDrawingPanel]);
+
+  // ===== 자동저장 없음: "완료" 버튼 눌렀을 때만 저장 =====
+  const saveDecorations = async () => {
+    if (!book?.id) return;
+    setSavingDecor(true);
+    try {
+      const bookRef = doc(db, "rooms", String(book.id));
+      await updateDoc(bookRef, {
+        [`pages.${page}.stickers`]: stickers,
+        [`pages.${page}.textBoxes`]: textBoxes,
+        [`pages.${page}.photoBoxes`]: photoBoxes,
+        [`pages.${page}.lines`]: lines,
+      });
+    } catch (e) {
+      console.error("저장 실패:", e);
+    } finally {
+      setSavingDecor(false);
+    }
+  };
+
+  const handleDecorDone = async () => {
+    await saveDecorations();
+    setDecorMode(false);
+    setShowStickerPanel(false); setShowTextPanel(false); setShowDrawingPanel(false); setShowPagePanel(false);
+    setSelectedSticker(null); setSelectedTextBox(null); setSelectedPhoto(null);
+  };
+
+  // 캔버스 드로잉 핸들러
+  const getCanvasMousePos = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.stopPropagation();
+    isDrawingRef.current = true;
+    const pos = getCanvasMousePos(e);
+
+    if (drawingTool === "eraser" && isStrokeEraserMode) {
+      eraseStrokeAt(pos.x, pos.y);
       return;
     }
-    if (!book?.id) return;
 
-    const timer = setTimeout(async () => {
-      try {
-        const bookRef = doc(db, "rooms", String(book.id));
-        await updateDoc(bookRef, {
-          [`pages.${page}.stickers`]: stickers,
-          [`pages.${page}.textBoxes`]: textBoxes,
-          [`pages.${page}.photoBoxes`]: photoBoxes,
-        });
-      } catch (e) {
-        console.error("자동 저장 실패:", e);
-      }
-    }, 800);
+    currentPointsRef.current = [pos];
+    const newLine: LineStroke = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+      points: [pos],
+      color: brushColor,
+      width: brushWidth,
+      mode: drawingTool
+    };
+    setLines(prev => [...prev, newLine]);
+  };
 
-    return () => clearTimeout(timer);
-  }, [stickers, textBoxes, photoBoxes]);
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current) return;
+    const pos = getCanvasMousePos(e);
+
+    if (drawingTool === "eraser" && isStrokeEraserMode) {
+      eraseStrokeAt(pos.x, pos.y);
+      return;
+    }
+
+    currentPointsRef.current.push(pos);
+    setLines(prev => {
+      if (prev.length === 0) return prev;
+      const copy = [...prev];
+      const lastIndex = copy.length - 1;
+      copy[lastIndex] = { ...copy[lastIndex], points: [...currentPointsRef.current] };
+      return copy;
+    });
+  };
+
+  const handleCanvasMouseUp = () => {
+    isDrawingRef.current = false;
+    currentPointsRef.current = [];
+  };
+
+  const eraseStrokeAt = (x: number, y: number) => {
+    const clickRadius = brushWidth + 8;
+    setLines(prev => prev.filter(line => {
+      if (line.mode === "eraser") return true;
+      const hit = line.points.some(pt => {
+        const dist = Math.sqrt((pt.x - x) ** 2 + (pt.y - y) ** 2);
+        return dist <= clickRadius;
+      });
+      return !hit;
+    }));
+  };
 
   const addPage = async () => {
     if (!book?.id) return;
-    const newPageNum = pageKeys.length; // 항상 맨 뒤에 추가
+    const newPageNum = pageKeys.length;
     try {
       const bookRef = doc(db, "rooms", String(book.id));
       await updateDoc(bookRef, { [`pages.${newPageNum}`]: EMPTY_FIRESTORE_PAGE });
@@ -172,7 +345,6 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
       const bookRef = doc(db, "rooms", String(book.id));
       const newPagesMap = { ...pagesMap };
       delete newPagesMap[currentKey];
-      // 남은 페이지들 번호 다시 0부터 채우기
       const reindexed: Record<string, FirestorePage> = {};
       Object.values(newPagesMap).forEach((p, i) => { reindexed[String(i)] = p; });
       await updateDoc(bookRef, { pages: reindexed });
@@ -200,7 +372,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const addSticker = (emoji: string) => {
     const newSticker: Sticker = {
       id: Date.now().toString(), emoji,
-      x: 80 + Math.random() * 100, y: 80 + Math.random() * 150, size: 28,
+      x: 80 + Math.random() * 100, y: 80 + Math.random() * 150, size: 28, rotation: 0,
     };
     setStickers(prev => [...prev, newSticker]);
     setShowStickerPanel(false);
@@ -218,6 +390,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
       id: Date.now().toString(), content: newTextInput,
       x: 60 + Math.random() * 80, y: 60 + Math.random() * 120,
       fontSize: newFontSize, color: newColor, fontFamily: newFont, bold: newBold,
+      bgColor: "rgba(255,255,255,0.9)", borderColor: "#C8A97A", borderWidth: 0, borderRadius: 8,
     };
     setTextBoxes(prev => [...prev, newBox]);
     setNewTextInput("");
@@ -235,6 +408,10 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setTextBoxes(prev => prev.map(t => t.id === id ? { ...t, content } : t));
   };
 
+  const updateTextBoxStyle = (id: string, patch: Partial<TextBox>) => {
+    setTextBoxes(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+  };
+
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -246,7 +423,9 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
         x: 60 + Math.random() * 80,
         y: 60 + Math.random() * 100,
         width: 120,
-        rotation: Math.random() * 10 - 5,
+        rotation: 0,
+        borderWidth: 0,
+        borderColor: "#FFFFFF",
       };
       setPhotoBoxes(prev => [...prev, newPhoto]);
       setSelectedPhoto(newPhoto.id);
@@ -260,7 +439,55 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setSelectedPhoto(null);
   };
 
+  const updatePhoto = (id: string, patch: Partial<PhotoBox>) => {
+    setPhotoBoxes(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+  };
+
+  // ===== 이동/크기조절/회전 드래그 =====
   const onMouseMove = (e: React.MouseEvent) => {
+    if (transformDrag) {
+      const { type, target, id } = transformDrag;
+      // 페이지 영역 기준 상대 좌표로 변환 (sticker/photo의 x,y도 같은 기준이라 좌표계를 맞춰야 함)
+      const rect = pageRef.current?.getBoundingClientRect();
+      const mouseX = e.clientX - (rect?.left ?? 0);
+      const mouseY = e.clientY - (rect?.top ?? 0);
+
+      if (target === "sticker") {
+        setStickers(prev => prev.map(s => {
+          if (s.id !== id) return s;
+          if (type === "resize") {
+            const dx = mouseX - s.x;
+            const dy = mouseY - s.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            return { ...s, size: clamp(dist, 14, 120) };
+          } else {
+            const centerX = s.x + s.size / 2;
+            const centerY = s.y + s.size / 2;
+            let deg = Math.atan2(mouseY - centerY, mouseX - centerX) * 180 / Math.PI + 90;
+            if (deg < 0) deg += 360;
+            return { ...s, rotation: Math.round(deg) };
+          }
+        }));
+      } else {
+        setPhotoBoxes(prev => prev.map(p => {
+          if (p.id !== id) return p;
+          if (type === "resize") {
+            const dx = mouseX - p.x;
+            const dy = mouseY - p.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            return { ...p, width: clamp(dist, 50, 320) };
+          } else {
+            const centerX = p.x + p.width / 2;
+            const centerY = p.y + p.width / 2;
+            let deg = Math.atan2(mouseY - centerY, mouseX - centerX) * 180 / Math.PI + 90;
+            if (deg < 0) deg += 360;
+            return { ...p, rotation: Math.round(deg) };
+          }
+        }));
+      }
+      return;
+    }
+
     if (!dragging) return;
     if (dragging.type === "sticker") {
       setStickers(prev => prev.map(s =>
@@ -277,7 +504,21 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     }
   };
 
-  const onMouseUp = () => setDragging(null);
+  // 마우스를 어디서 떼든(다이어리 영역 밖이라도) 확실히 드래그 종료되도록
+  useEffect(() => {
+    if (!dragging && !transformDrag) return;
+    const handleWindowMouseUp = () => {
+      setDragging(null);
+      setTransformDrag(null);
+    };
+    window.addEventListener("mouseup", handleWindowMouseUp);
+    return () => window.removeEventListener("mouseup", handleWindowMouseUp);
+  }, [dragging, transformDrag]);
+
+  const onMouseUp = () => {
+    setDragging(null);
+    setTransformDrag(null);
+  };
 
   const onStickerMouseDown = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -304,6 +545,20 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     setDragging({ type: "photo", id, offsetX: e.clientX - photo.x, offsetY: e.clientY - photo.y });
   };
 
+  const onResizeHandleDown = (e: React.MouseEvent, target: "sticker" | "photo", id: string) => {
+    e.stopPropagation();
+    setTransformDrag({ type: "resize", target, id });
+  };
+
+  const onRotateHandleDown = (e: React.MouseEvent, target: "sticker" | "photo", id: string) => {
+    e.stopPropagation();
+    setTransformDrag({ type: "rotate", target, id });
+  };
+
+  const activePhoto = photoBoxes.find(p => p.id === selectedPhoto);
+  const activeTextBox = textBoxes.find(t => t.id === selectedTextBox);
+  const showEditPanel = decorMode && !showStickerPanel && !showTextPanel && !showPagePanel && !showDrawingPanel && !editingTextBox;
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Action bar */}
@@ -313,8 +568,8 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           { label: "◀ 책장", fn: onBack }, null,
           { label: "기록 편집", fn: () => {} }, null,
           { label: "+ 추가", fn: onAddRecord }, null,
-          { label: decorMode ? "✅ 완료" : "🎨 꾸미기", fn: () => { setDecorMode(!decorMode); setShowStickerPanel(false); setShowTextPanel(false); setShowPagePanel(false); setSelectedSticker(null); setSelectedTextBox(null); setSelectedPhoto(null); } }, null,
-          { label: "📄 페이지", fn: () => { setShowPagePanel(!showPagePanel); setShowStickerPanel(false); setShowTextPanel(false); } },
+          { label: decorMode ? (savingDecor ? "저장 중..." : "✅ 완료") : "🎨 꾸미기", fn: () => { decorMode ? handleDecorDone() : setDecorMode(true); } }, null,
+          { label: "📄 페이지", fn: () => { setShowPagePanel(!showPagePanel); setShowStickerPanel(false); setShowTextPanel(false); setShowDrawingPanel(false); } },
         ] as ({ label: string; fn: () => void } | null)[]).map((item, i) => {
           if (item === null) return <div key={i} style={{ width: 1, height: 15, background: "rgba(200,169,122,0.3)", flexShrink: 0 }} />;
           return (
@@ -354,14 +609,15 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
       {decorMode && (
         <div className="flex items-center justify-center gap-2 mx-4 mt-2 px-3 py-2 rounded-2xl"
           style={{ background: "rgba(255,255,255,0.95)", border: "1px solid rgba(200,169,122,0.3)", boxShadow: "0 2px 12px rgba(0,0,0,0.08)" }}>
-          <button onClick={() => { setShowStickerPanel(!showStickerPanel); setShowTextPanel(false); }}
+          <button onClick={() => { setShowStickerPanel(!showStickerPanel); setShowTextPanel(false); setShowDrawingPanel(false); setSelectedSticker(null); setSelectedPhoto(null); setSelectedTextBox(null); }}
             className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
             style={{ background: showStickerPanel ? "rgba(200,169,122,0.15)" : "transparent", border: "1px solid rgba(200,169,122,0.3)" }}>
             <span style={{ fontSize: 18 }}>😊</span>
             <span style={{ fontSize: 9, color: "#7A7064" }}>스티커</span>
           </button>
-          <button className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl"
-            style={{ border: "1px solid rgba(200,169,122,0.3)", opacity: 0.5 }}>
+          <button onClick={() => { setShowDrawingPanel(!showDrawingPanel); setShowStickerPanel(false); setShowTextPanel(false); setSelectedSticker(null); setSelectedPhoto(null); setSelectedTextBox(null); }}
+            className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
+            style={{ background: showDrawingPanel ? "rgba(200,169,122,0.15)" : "transparent", border: "1px solid rgba(200,169,122,0.3)" }}>
             <span style={{ fontSize: 18 }}>✏️</span>
             <span style={{ fontSize: 9, color: "#7A7064" }}>그림판</span>
           </button>
@@ -371,12 +627,73 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
             <span style={{ fontSize: 9, color: "#7A7064" }}>사진</span>
             <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: "none" }} />
           </label>
-          <button onClick={() => { setShowTextPanel(!showTextPanel); setShowStickerPanel(false); }}
+          <button onClick={() => { setShowTextPanel(!showTextPanel); setShowStickerPanel(false); setShowDrawingPanel(false); setSelectedSticker(null); setSelectedPhoto(null); setSelectedTextBox(null); }}
             className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
             style={{ background: showTextPanel ? "rgba(200,169,122,0.15)" : "transparent", border: "1px solid rgba(200,169,122,0.3)" }}>
             <span style={{ fontSize: 18 }}>T</span>
             <span style={{ fontSize: 9, color: "#7A7064" }}>텍스트</span>
           </button>
+        </div>
+      )}
+
+      {/* 그림판 패널 */}
+      {showDrawingPanel && decorMode && (
+        <div className="mx-4 mt-1 p-3 rounded-2xl flex flex-col gap-3"
+          style={{ background: "rgba(255,255,255,0.98)", border: "1px solid rgba(200,169,122,0.3)", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
+          <div className="flex gap-1">
+            {([
+              { id: "pen", label: "볼펜" },
+              { id: "highlighter", label: "형광펜" },
+              { id: "neon", label: "네온" },
+              { id: "pencil", label: "연필" },
+              { id: "eraser", label: "지우개" }
+            ] as const).map(tool => (
+              <button key={tool.id} onClick={() => setDrawingTool(tool.id)}
+                style={{ flex: 1, padding: "5px 2px", fontSize: 10, borderRadius: 6, border: drawingTool === tool.id ? "1.5px solid #C8A97A" : "1px solid rgba(200,169,122,0.3)", background: drawingTool === tool.id ? "rgba(200,169,122,0.15)" : "transparent", fontWeight: drawingTool === tool.id ? 700 : 400, cursor: "pointer" }}>
+                {tool.label}
+              </button>
+            ))}
+          </div>
+
+          {drawingTool !== "eraser" && (
+            <div className="flex items-center justify-between gap-2 bg-amber-50/20 p-1.5 rounded-xl border border-amber-900/5">
+              <div className="flex gap-1.5 flex-wrap flex-1">
+                {PALETTE_6_COLORS.map(color => (
+                  <button key={color} onClick={() => setBrushColor(color)}
+                    style={{ width: 22, height: 22, borderRadius: "50%", background: color, border: brushColor === color ? "2.5px solid #C8A97A" : "1.5px solid rgba(0,0,0,0.15)", cursor: "pointer" }} />
+                ))}
+              </div>
+              <div style={{ width: 1, height: 20, background: "rgba(200,169,122,0.3)" }} />
+              <div className="flex items-center gap-1">
+                <Palette size={11} color="#7A7064" />
+                <input type="color" value={brushColor} onChange={(e) => setBrushColor(e.target.value)}
+                  style={{ width: 24, height: 22, border: "none", padding: 0, background: "transparent", cursor: "pointer" }} />
+              </div>
+            </div>
+          )}
+
+          {drawingTool === "eraser" && (
+            <div className="flex items-center justify-between p-1 px-2 rounded-xl" style={{ background: "rgba(200,169,122,0.05)" }}>
+              <span style={{ fontSize: 10, color: "#7A7064", fontWeight: 600 }}>획 별 지우기 모드</span>
+              <button onClick={() => setIsStrokeEraserMode(!isStrokeEraserMode)}
+                style={{ padding: "3px 8px", fontSize: 9, borderRadius: 6, border: "1px solid #C8A97A", background: isStrokeEraserMode ? "#C8A97A" : "transparent", color: isStrokeEraserMode ? "#FFF" : "#7A5C3A", fontWeight: 600 }}>
+                {isStrokeEraserMode ? "ON (선 전체 삭제)" : "OFF (일반 지우개)"}
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: 9, color: "#7A7064", width: 40, flexShrink: 0 }}>굵기 조절</span>
+            <input type="range" min={1} max={50} value={brushWidth}
+              onChange={(e) => setBrushWidth(Number(e.target.value))}
+              style={{ flex: 1, accentColor: "#C8A97A" }} />
+            <span style={{ fontSize: 9, color: "#7A7064", width: 20, textAlign: "right", fontWeight: 700 }}>{brushWidth}</span>
+          </div>
+
+          <div className="flex gap-2">
+            <button onClick={() => setLines([])} style={{ flex: 1, padding: "5px", background: "rgba(231,76,60,0.1)", color: "#e74c3c", border: "1px solid rgba(231,76,60,0.2)", borderRadius: 7, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>그림 전체 초기화</button>
+            <button onClick={() => setShowDrawingPanel(false)} style={{ flex: 1, padding: "5px", background: "#C8A97A", color: "#fff", border: "none", borderRadius: 7, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>접기</button>
+          </div>
         </div>
       )}
 
@@ -448,6 +765,110 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
         </div>
       )}
 
+      {/* 사진 테두리 편집 패널 (크기/회전은 사진 손잡이로) */}
+      {showEditPanel && activePhoto && (
+        <div className="mx-4 mt-1 p-3 rounded-2xl"
+          style={{ background: "rgba(255,255,255,0.98)", border: "1px solid rgba(200,169,122,0.3)", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
+          <div style={{ fontSize: 10, color: "#7A7064", marginBottom: 10, fontWeight: 600 }}>사진 테두리 (크기·회전은 사진 손잡이를 직접 드래그)</div>
+          <div className="flex items-center gap-2 mb-2">
+            <span style={{ fontSize: 9, color: "#7A7064", width: 40, flexShrink: 0 }}>두께</span>
+            <input type="range" min={0} max={12} value={activePhoto.borderWidth}
+              onChange={(e) => updatePhoto(activePhoto.id, { borderWidth: Number(e.target.value) })}
+              style={{ flex: 1 }} />
+            <span style={{ fontSize: 9, color: "#7A7064", width: 40, textAlign: "right" }}>
+              {activePhoto.borderWidth === 0 ? "없음" : `${activePhoto.borderWidth}px`}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <span style={{ fontSize: 9, color: "#7A7064", flexShrink: 0 }}>색상</span>
+            <button onClick={() => updatePhoto(activePhoto.id, { borderWidth: 0 })}
+              style={{ fontSize: 9, padding: "3px 8px", borderRadius: 6, border: activePhoto.borderWidth === 0 ? "1.5px solid #C8A97A" : "1px solid rgba(200,169,122,0.3)", background: activePhoto.borderWidth === 0 ? "rgba(200,169,122,0.15)" : "transparent", color: "#5A5040", cursor: "pointer" }}>
+              없음
+            </button>
+            <div className="flex gap-1 flex-wrap">
+              {COLOR_OPTIONS.map(c => (
+                <button key={c.value} onClick={() => updatePhoto(activePhoto.id, { borderColor: c.value, borderWidth: activePhoto.borderWidth || 4 })}
+                  style={{ width: 20, height: 20, borderRadius: "50%", background: c.value, border: activePhoto.borderColor === c.value && activePhoto.borderWidth > 0 ? "2.5px solid #C8A97A" : "2px solid rgba(0,0,0,0.15)", cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }} />
+              ))}
+            </div>
+          </div>
+          <button onClick={() => deletePhoto(activePhoto.id)}
+            style={{ width: "100%", padding: "6px", background: "rgba(231,76,60,0.1)", color: "#e74c3c", border: "1px solid rgba(231,76,60,0.3)", borderRadius: 8, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+            사진 삭제
+          </button>
+        </div>
+      )}
+
+      {/* 텍스트박스 편집 패널 */}
+      {showEditPanel && activeTextBox && (
+        <div className="mx-4 mt-1 p-3 rounded-2xl"
+          style={{ background: "rgba(255,255,255,0.98)", border: "1px solid rgba(200,169,122,0.3)", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
+          <div style={{ fontSize: 10, color: "#7A7064", marginBottom: 10, fontWeight: 600 }}>텍스트 편집 (클릭하면 바로 내용 수정)</div>
+          <div className="flex flex-col gap-2 mb-2">
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: 9, color: "#7A7064", width: 48, flexShrink: 0 }}>글자크기</span>
+              <input type="range" min={8} max={36} value={activeTextBox.fontSize}
+                onChange={(e) => updateTextBoxStyle(activeTextBox.id, { fontSize: Number(e.target.value) })}
+                style={{ flex: 1 }} />
+              <span style={{ fontSize: 9, color: "#7A7064", width: 24, textAlign: "right" }}>{activeTextBox.fontSize}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: 9, color: "#7A7064", width: 48, flexShrink: 0 }}>테두리</span>
+              <input type="range" min={0} max={6} value={activeTextBox.borderWidth}
+                onChange={(e) => updateTextBoxStyle(activeTextBox.id, { borderWidth: Number(e.target.value) })}
+                style={{ flex: 1 }} />
+              <span style={{ fontSize: 9, color: "#7A7064", width: 40, textAlign: "right" }}>
+                {activeTextBox.borderWidth === 0 ? "없음" : `${activeTextBox.borderWidth}px`}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+            <span style={{ fontSize: 9, color: "#7A7064", flexShrink: 0, width: 48 }}>배경</span>
+            <button onClick={() => updateTextBoxStyle(activeTextBox.id, { bgColor: "transparent" })}
+              style={{ fontSize: 9, padding: "3px 8px", borderRadius: 6, border: activeTextBox.bgColor === "transparent" ? "1.5px solid #C8A97A" : "1px solid rgba(200,169,122,0.3)", background: activeTextBox.bgColor === "transparent" ? "rgba(200,169,122,0.15)" : "transparent", color: "#5A5040", cursor: "pointer" }}>
+              없음
+            </button>
+            <div className="flex gap-1 flex-wrap">
+              {["rgba(255,255,255,0.9)", "#FFF8E7", "#2A2318", "#F0EAD6", "#E8DFF5"].map(bg => (
+                <button key={bg} onClick={() => updateTextBoxStyle(activeTextBox.id, { bgColor: bg })}
+                  style={{ width: 20, height: 20, borderRadius: "50%", background: bg, border: activeTextBox.bgColor === bg ? "2.5px solid #C8A97A" : "2px solid rgba(0,0,0,0.15)", cursor: "pointer" }} />
+              ))}
+            </div>
+            <input type="color"
+              value={activeTextBox.bgColor.startsWith("#") ? activeTextBox.bgColor : "#ffffff"}
+              onChange={(e) => updateTextBoxStyle(activeTextBox.id, { bgColor: e.target.value })}
+              style={{ width: 24, height: 22, border: "1px solid rgba(200,169,122,0.3)", borderRadius: 4, padding: 0, cursor: "pointer" }} />
+          </div>
+
+          <div className="flex items-center gap-1.5 mb-2">
+            <span style={{ fontSize: 9, color: "#7A7064", flexShrink: 0, width: 48 }}>테두리색</span>
+            <div className="flex gap-1 flex-wrap">
+              {COLOR_OPTIONS.map(c => (
+                <button key={c.value} onClick={() => updateTextBoxStyle(activeTextBox.id, { borderColor: c.value, borderWidth: activeTextBox.borderWidth || 2 })}
+                  style={{ width: 20, height: 20, borderRadius: "50%", background: c.value, border: activeTextBox.borderColor === c.value ? "2.5px solid #C8A97A" : "2px solid rgba(0,0,0,0.15)", cursor: "pointer" }} />
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span style={{ fontSize: 9, color: "#7A7064", flexShrink: 0, width: 48 }}>모양</span>
+            <div className="flex gap-1">
+              {SHAPE_OPTIONS.map(s => (
+                <button key={s.label} onClick={() => updateTextBoxStyle(activeTextBox.id, { borderRadius: s.value })}
+                  style={{ fontSize: 9, padding: "3px 8px", borderRadius: 6, border: activeTextBox.borderRadius === s.value ? "1.5px solid #C8A97A" : "1px solid rgba(200,169,122,0.3)", background: activeTextBox.borderRadius === s.value ? "rgba(200,169,122,0.15)" : "transparent", color: "#5A5040", cursor: "pointer" }}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button onClick={() => deleteTextBox(activeTextBox.id)}
+            style={{ width: "100%", padding: "6px", background: "rgba(231,76,60,0.1)", color: "#e74c3c", border: "1px solid rgba(231,76,60,0.3)", borderRadius: 8, fontSize: 10, fontWeight: 600, marginTop: 8, cursor: "pointer" }}>
+            글상자 삭제
+          </button>
+        </div>
+      )}
+
       <div className="text-center mt-2 mb-2">
         <span className="text-xs tracking-widest" style={{ fontFamily: "'DM Serif Display', serif", color: "#7A7064" }}>
           {book.emoji} {book.title}
@@ -458,133 +879,140 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
       <div className="mx-4 flex-1 min-h-0 relative overflow-hidden"
         style={{ maxHeight: 430 }}
         onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onClick={() => { setSelectedSticker(null); setSelectedTextBox(null); setSelectedPhoto(null); }}>
+        onMouseUp={onMouseUp}>
         <div className="w-full h-full rounded-lg overflow-hidden relative"
           style={{ background: "#F9F7F2", boxShadow: "-8px 0 28px rgba(0,0,0,0.07),8px 0 28px rgba(0,0,0,0.05),0 20px 40px rgba(0,0,0,0.1)", border: "1px solid rgba(229,219,197,0.8)" }}>
           <div className="absolute inset-0 pointer-events-none"
             style={{ backgroundImage: "repeating-linear-gradient(transparent,transparent 27px,rgba(200,169,122,0.1) 28px)" }} />
           <div className="absolute top-0 bottom-0" style={{ left: 26, width: 1, background: "rgba(200,169,122,0.22)" }} />
-          <div className="relative w-full h-full" style={{ padding: "14px 14px 14px 32px" }}>
+
+          <canvas
+            ref={canvasRef}
+            width={400}
+            height={430}
+            className="absolute inset-0 w-full h-full"
+            style={{
+              zIndex: showDrawingPanel ? 50 : 25,
+              pointerEvents: showDrawingPanel ? "auto" : "none",
+              cursor: drawingTool === "eraser" ? "cell" : "crosshair"
+            }}
+            onMouseDown={handleCanvasMouseDown}
+            onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp}
+            onMouseLeave={handleCanvasMouseUp}
+          />
+
+          <div className="relative w-full h-full" ref={pageRef} style={{ padding: "14px 14px 14px 32px" }}
+            onMouseDown={(e) => {
+              // 진짜 빈 배경을 "누르는 순간"에만 선택 해제 (손 떼는 위치 기준이면 오작동함)
+              if (e.target === e.currentTarget) {
+                setSelectedSticker(null); setSelectedTextBox(null); setSelectedPhoto(null);
+              }
+            }}>
 
             {/* 기본 텍스트 박스 */}
             <div className="absolute rounded-xl" style={{ left: 14, top: 60, maxWidth: 175, zIndex: 10 }}>
               {isEditing ? (
                 <div>
                   <textarea value={textContent} onChange={(e) => setTextContent(e.target.value)} autoFocus
-                    style={{ width: 175, minHeight: 80, padding: "10px 12px", background: "rgba(255,255,255,0.95)", border: "1.5px solid rgba(200,169,122,0.6)", borderRadius: 12, resize: "none", fontFamily: "'Gowun Batang', serif", fontSize: 12, color: "#2A2318", lineHeight: 1.65, outline: "none" }} />
-                  <div className="flex gap-1 mt-1">
-                    <button onClick={saveText} disabled={saving} style={{ flex: 1, padding: "4px 8px", background: "#C8A97A", color: "#fff", border: "none", borderRadius: 8, fontSize: 10, cursor: "pointer" }}>
-                      {saving ? "저장 중..." : "저장"}
-                    </button>
-                    <button onClick={() => { setIsEditing(false); setTextContent(pg.text || ""); }} style={{ flex: 1, padding: "4px 8px", background: "transparent", color: "#7A7064", border: "1px solid rgba(200,169,122,0.4)", borderRadius: 8, fontSize: 10, cursor: "pointer" }}>취소</button>
+                    style={{ width: 175, minHeight: 80, padding: "10px 12px", background: "rgba(255,255,255,0.95)", border: "1.5px solid rgba(200,169,122,0.6)", borderRadius: 12, resize: "none", fontFamily: "'Gowun Batang', serif", fontSize: 13 }} />
+                  <div className="flex gap-1.5 mt-1">
+                    <button onClick={saveText} disabled={saving} style={{ padding: "4px 8px", background: "#C8A97A", color: "#fff", border: "none", borderRadius: 6, fontSize: 10 }}>{saving ? "저장중" : "저장"}</button>
+                    <button onClick={() => setIsEditing(false)} style={{ padding: "4px 8px", background: "#ccc", color: "#333", border: "none", borderRadius: 6, fontSize: 10 }}>취소</button>
                   </div>
                 </div>
               ) : (
-                <div onClick={() => !decorMode && setIsEditing(true)}
-                  style={{ padding: "10px 12px", background: "rgba(255,255,255,0.88)", backdropFilter: "blur(4px)", boxShadow: "0 3px 12px rgba(0,0,0,0.09)", borderRadius: 12, fontFamily: "'Gowun Batang', serif", fontSize: 12, color: "#2A2318", lineHeight: 1.65, whiteSpace: "pre-line", cursor: decorMode ? "default" : "text", border: "1.5px dashed rgba(200,169,122,0.3)" }}>
-                  {textContent || "✏️ 클릭해서 일기를 작성하세요"}
+                <div onDoubleClick={() => !decorMode && setIsEditing(true)} style={{ fontFamily: "'Gowun Batang', serif", fontSize: 13, color: "#2A2318", whiteSpace: "pre-wrap", lineHeight: "28px" }}>
+                  {textContent || <span className="text-amber-900/30 text-xs">더블클릭하여 일기를 작성하세요.</span>}
                 </div>
               )}
             </div>
 
-            {/* 추가된 사진들 (틀 없이) */}
-            {photoBoxes.map(photo => (
-              <div key={photo.id} className="absolute select-none"
-                style={{ left: photo.x, top: photo.y, width: photo.width, zIndex: 22, transform: `rotate(${photo.rotation}deg)`, cursor: decorMode ? "grab" : "default", position: "absolute" }}
-                onMouseDown={(e) => decorMode && onPhotoMouseDown(e, photo.id)}>
-                <img src={photo.src} style={{
+            {/* 사진들 */}
+            {photoBoxes.map((p) => (
+              <div key={p.id} className="absolute select-none"
+                style={{ left: p.x, top: p.y, width: p.width, zIndex: 30, transform: `rotate(${p.rotation}deg)`, cursor: decorMode ? "grab" : "default" }}
+                onMouseDown={(e) => decorMode && onPhotoMouseDown(e, p.id)}>
+                <img src={p.src} alt="upload" style={{
                   width: "100%", display: "block", objectFit: "cover", borderRadius: 6,
-                  boxShadow: selectedPhoto === photo.id ? "0 0 0 2px #C8A97A, 0 6px 18px rgba(0,0,0,0.2)" : "0 6px 18px rgba(0,0,0,0.2)"
+                  border: p.borderWidth > 0 ? `${p.borderWidth}px solid ${p.borderColor}` : "none",
+                  boxShadow: selectedPhoto === p.id ? "0 0 0 2px #C8A97A, 0 6px 18px rgba(0,0,0,0.2)" : "0 6px 18px rgba(0,0,0,0.2)"
                 }} />
-                {selectedPhoto === photo.id && decorMode && (
-                  <button
-                    onMouseDown={(e) => { e.stopPropagation(); deletePhoto(photo.id); }}
-                    style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-                    <X size={10} color="#fff" />
-                  </button>
+                {selectedPhoto === p.id && decorMode && (
+                  <>
+                    <button
+                      onMouseDown={(e) => { e.stopPropagation(); deletePhoto(p.id); }}
+                      style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, zIndex: 5 }}>
+                      <X size={10} color="#fff" />
+                    </button>
+                    <div onMouseDown={(e) => onRotateHandleDown(e, "photo", p.id)}
+                      style={{ position: "absolute", top: -30, left: "50%", transform: "translateX(-50%)", width: 22, height: 22, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5 }}>
+                      <RotateCw size={11} color="#fff" />
+                    </div>
+                    <div onMouseDown={(e) => onResizeHandleDown(e, "photo", p.id)}
+                      style={{ position: "absolute", bottom: -10, right: -10, width: 22, height: 22, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "nwse-resize", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5 }}>
+                      <Maximize2 size={11} color="#fff" />
+                    </div>
+                  </>
                 )}
               </div>
             ))}
 
-            {/* 추가된 텍스트 박스들 */}
-            {textBoxes.map(box => (
-              <div key={box.id} className="absolute"
-                style={{ left: box.x, top: box.y, zIndex: 25, maxWidth: 160, position: "absolute" }}
-                onMouseDown={(e) => decorMode && onTextBoxMouseDown(e, box.id)}>
-                {editingTextBox === box.id ? (
-                  <textarea value={box.content} onChange={(e) => updateTextBox(box.id, e.target.value)} autoFocus onBlur={() => setEditingTextBox(null)}
-                    style={{ width: 150, minHeight: 50, padding: "6px 8px", background: "rgba(255,255,255,0.95)", border: "1.5px solid rgba(200,169,122,0.6)", borderRadius: 8, resize: "none", fontFamily: box.fontFamily, fontSize: box.fontSize, color: box.color, fontWeight: box.bold ? 700 : 400, lineHeight: 1.6, outline: "none" }} />
+            {/* 텍스트 박스들 */}
+            {textBoxes.map((t) => (
+              <div key={t.id} onMouseDown={(e) => decorMode && onTextBoxMouseDown(e, t.id)}
+                onClick={(e) => { e.stopPropagation(); if (decorMode) setEditingTextBox(t.id); }}
+                style={{ position: "absolute", left: t.x, top: t.y, zIndex: 32, cursor: decorMode ? "move" : "default", padding: "6px 10px", background: t.bgColor, border: `${t.borderWidth}px solid ${t.borderColor}`, borderRadius: t.borderRadius, fontFamily: t.fontFamily, fontSize: t.fontSize, color: t.color, fontWeight: t.bold ? 700 : 400, boxShadow: t.bgColor !== "transparent" ? "0 2px 8px rgba(0,0,0,0.06)" : "none", borderStyle: selectedTextBox === t.id ? "dashed" : "solid" }}>
+                {editingTextBox === t.id ? (
+                  <input type="text" value={t.content} onChange={(e) => updateTextBox(t.id, e.target.value)}
+                    onBlur={() => setEditingTextBox(null)} onKeyDown={(e) => e.key === "Enter" && setEditingTextBox(null)} autoFocus
+                    style={{ background: "transparent", border: "none", outline: "none", width: "auto", font: "inherit", color: "inherit" }} />
                 ) : (
-                  <div onDoubleClick={() => decorMode && setEditingTextBox(box.id)}
-                    style={{ padding: "6px 10px", background: "rgba(255,255,255,0.9)", backdropFilter: "blur(4px)", boxShadow: "0 2px 10px rgba(0,0,0,0.08)", borderRadius: 8, fontFamily: box.fontFamily, fontSize: box.fontSize, color: box.color, fontWeight: box.bold ? 700 : 400, lineHeight: 1.6, whiteSpace: "pre-line", cursor: decorMode ? "grab" : "default", border: selectedTextBox === box.id && decorMode ? "1.5px solid rgba(200,169,122,0.6)" : "1px dashed rgba(200,169,122,0.3)", userSelect: "none", position: "relative" }}>
-                    {box.content}
-                    {selectedTextBox === box.id && decorMode && (
-                      <button onMouseDown={(e) => { e.stopPropagation(); deleteTextBox(box.id); }}
-                        style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-                        <X size={10} color="#fff" />
-                      </button>
-                    )}
-                  </div>
+                  t.content
                 )}
               </div>
             ))}
 
             {/* 스티커들 */}
-            {stickers.map(sticker => (
-              <div key={sticker.id} onMouseDown={(e) => decorMode && onStickerMouseDown(e, sticker.id)}
+            {stickers.map((s) => (
+              <div key={s.id} onMouseDown={(e) => decorMode && onStickerMouseDown(e, s.id)}
                 className="absolute select-none"
-                style={{ left: sticker.x, top: sticker.y, fontSize: sticker.size, cursor: decorMode ? "grab" : "default", zIndex: 20, filter: selectedSticker === sticker.id ? "drop-shadow(0 0 4px rgba(200,169,122,0.8))" : "none", userSelect: "none" }}>
-                {sticker.emoji}
-                {selectedSticker === sticker.id && decorMode && (
-                  <button onMouseDown={(e) => { e.stopPropagation(); deleteSticker(sticker.id); }}
-                    style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-                    <X size={10} color="#fff" />
-                  </button>
+                style={{ left: s.x, top: s.y, fontSize: s.size, transform: `rotate(${s.rotation || 0}deg)`, zIndex: 40, cursor: decorMode ? "grab" : "default", userSelect: "none" }}>
+                {s.emoji}
+                {selectedSticker === s.id && decorMode && (
+                  <>
+                    <button onMouseDown={(e) => { e.stopPropagation(); deleteSticker(s.id); }}
+                      style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, transform: `rotate(${-(s.rotation || 0)}deg)`, zIndex: 5 }}>
+                      <X size={10} color="#fff" />
+                    </button>
+                    <div onMouseDown={(e) => onRotateHandleDown(e, "sticker", s.id)}
+                      style={{ position: "absolute", top: -26, left: "50%", transform: `translateX(-50%) rotate(${-(s.rotation || 0)}deg)`, width: 18, height: 18, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5 }}>
+                      <RotateCw size={9} color="#fff" />
+                    </div>
+                    <div onMouseDown={(e) => onResizeHandleDown(e, "sticker", s.id)}
+                      style={{ position: "absolute", bottom: -8, right: -8, width: 18, height: 18, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "nwse-resize", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5, transform: `rotate(${-(s.rotation || 0)}deg)` }}>
+                      <Maximize2 size={9} color="#fff" />
+                    </div>
+                  </>
                 )}
               </div>
             ))}
+
           </div>
         </div>
       </div>
 
-      {/* Page nav */}
-      <div className="flex items-center justify-between px-6 py-2">
+      {/* 하단 페이지 내비게이션 */}
+      <div className="flex items-center justify-between mx-6 my-3 text-[#7A7064]">
         <button onClick={() => onPageChange(Math.max(0, page - 1))} disabled={page === 0}
-          className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-25"
-          style={{ border: "1.5px solid rgba(200,169,122,0.5)", color: "#C8A97A" }}>
-          <ChevronLeft size={16} />
+          className="p-1.5 rounded-full hover:bg-amber-100/30 disabled:opacity-20 transition-all">
+          <ChevronLeft size={18} />
         </button>
-        <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: 11, letterSpacing: 2, color: "#7A7064" }}>
-          {page + 1} / {pageKeys.length}
-        </span>
+        <span className="text-[10px] font-semibold tracking-wider">PAGE {page + 1}</span>
         <button onClick={() => onPageChange(Math.min(pageKeys.length - 1, page + 1))} disabled={page === pageKeys.length - 1}
-          className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-25"
-          style={{ border: "1.5px solid rgba(200,169,122,0.5)", color: "#C8A97A" }}>
-          <ChevronRight size={16} />
+          className="p-1.5 rounded-full hover:bg-amber-100/30 disabled:opacity-20 transition-all">
+          <ChevronRight size={18} />
         </button>
-      </div>
-
-      {/* BGM */}
-      <div className="mx-4 mb-3 flex items-center gap-3 px-4 py-2.5 rounded-[28px]"
-        style={{ background: "rgba(30,27,22,0.93)", border: "1px solid rgba(200,169,122,0.4)", backdropFilter: "blur(12px)", boxShadow: "0 8px 32px rgba(0,0,0,0.38)" }}>
-        <div className="rounded-md flex-shrink-0" style={{ width: 32, height: 32, background: "rgba(200,169,122,0.18)", border: "1px solid rgba(200,169,122,0.3)" }} />
-        <div className="flex-1 min-w-0">
-          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 12, color: "rgba(200,169,122,0.92)", letterSpacing: 0.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{track.title}</div>
-          <div style={{ fontSize: 10, color: "rgba(200,169,122,0.5)", marginTop: 2 }}>{track.artist}</div>
-        </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {[
-            { icon: <SkipBack size={10} />, onClick: onPrevTrack, primary: false },
-            { icon: bgmPlaying ? <Pause size={12} /> : <Play size={12} />, onClick: onBgmToggle, primary: true },
-            { icon: <SkipForward size={10} />, onClick: onNextTrack, primary: false },
-          ].map((btn, i) => (
-            <button key={i} onClick={btn.onClick} className="rounded-full flex items-center justify-center"
-              style={{ width: btn.primary ? 28 : 24, height: btn.primary ? 28 : 24, color: "#C8A97A", background: btn.primary ? "rgba(200,169,122,0.16)" : "transparent", border: `1px solid rgba(200,169,122,${btn.primary ? 0.55 : 0.32})` }}>
-              {btn.icon}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );

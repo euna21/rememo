@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
-import { Screen } from "./types";
-import { TRACKS } from "./data/mockData"; // BOOKS는 이제 안 씀
-import { db } from "../firebase";
+import { Screen } from "./types"; // 💡 에러가 났었다면 프로젝트 구조에 맞게 "./types" 또는 "./index"로 유지해줘!
+import { TRACKS } from "./data/mockData";
+import { db, auth } from "../firebase";
 import { collection, onSnapshot } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 
 // Components
 import StatusBar from "./components/StatusBar";
 import Sidebar from "./components/Sidebar";
+import BottomNav from "./components/BottomNav";
 
 // Screens
 import LoginScreen from "./screens/LoginScreen";
@@ -18,9 +20,11 @@ import AddScreen from "./screens/AddScreen";
 import AiScreen from "./screens/AiScreen";
 import FriendsScreen from "./screens/FriendsScreen";
 import NewDiaryScreen from "./screens/NewDiaryScreen";
+import ProfileScreen from "./screens/ProfileScreen";
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("login");
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [sidebar, setSidebar] = useState(false);
   const [bookIdx, setBookIdx] = useState(0);
   const [diaryPage, setDiaryPage] = useState(0);
@@ -33,19 +37,28 @@ export default function App() {
   const [selTracks, setSelTracks] = useState<number[]>([]);
   const [friendQ, setFriendQ] = useState("");
   const [psEnabled, setPsEnabled] = useState(false);
-
-  // ✅ 여기 추가: Firestore rooms 실시간 구독
   const [books, setBooks] = useState<any[]>([]);
 
+  // 자동 로그인 감지
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) setScreen("bookshelf");
+      else setScreen("login");
+      setIsAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore 데이터 구독
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "rooms"), (snapshot) => {
       const roomList = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,          // ✅ 실제 Firestore 문서 ID
-        ...docSnap.data(),       // title, emoji, gradient, count, members, pages, roles 등
+        id: docSnap.id,
+        ...docSnap.data(),
       }));
       setBooks(roomList);
     });
-    return () => unsub(); // 컴포넌트 사라질 때 구독 해제
+    return () => unsub();
   }, []);
 
   const toggleTrack = (i: number) =>
@@ -53,31 +66,30 @@ export default function App() {
 
   const isDarkScreen = screen === "login" || screen === "signup" || screen === "ai";
 
-  const NAV: { label: string; s: Screen }[] = [
-    { label: "로그인", s: "login" }, { label: "회원가입", s: "signup" },
-    { label: "책장", s: "bookshelf" }, { label: "다이어리", s: "diary" },
-    { label: "캡슐", s: "capsule" }, { label: "기록추가", s: "add" },
-    { label: "AI생성", s: "ai" }, { label: "친구", s: "friends" },
-    { label: "새다이어리", s: "newdiary" },
-  ];
+  // 깜빡임 방지용 로딩 UI
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center py-8 px-6" 
+           style={{ background: "radial-gradient(ellipse at 45% 35%,#C8C3B6 0%,#A8A39A 100%)" }}>
+        <p className="text-[12px] tracking-[5px] text-[#5A554E]" style={{ fontFamily: "'DM Serif Display', serif" }}>
+          ARCHIVE LOADING...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center py-8 px-6"
       style={{ background: "radial-gradient(ellipse at 45% 35%,#C8C3B6 0%,#A8A39A 100%)", fontFamily: "'Noto Sans KR', sans-serif" }}>
+      
+      {/* 🌟 애니메이션 코드를 다시 내부 <style> 태그로 안전하게 복귀! */}
       <style>{`
-        @keyframes capsuleShake {
-          0%,100%{transform:translateX(0)}
-          15%,45%,75%{transform:translateX(-8px) rotate(-3deg)}
-          30%,60%,90%{transform:translateX(8px) rotate(3deg)}
-        }
-        @keyframes pulseFade {
-          0%,100%{opacity:0.45} 50%{opacity:1}
-        }
-        @keyframes floatUp {
-          0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)}
-        }
+        @keyframes capsuleShake { 0%,100%{transform:translateX(0)} 15%,45%,75%{transform:translateX(-8px) rotate(-3deg)} 30%,60%,90%{transform:translateX(8px) rotate(3deg)} }
+        @keyframes pulseFade { 0%,100%{opacity:0.45} 50%{opacity:1} }
+        @keyframes floatUp { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
         .no-scroll::-webkit-scrollbar{display:none}
       `}</style>
+      
       <div className="flex flex-col items-center gap-4">
         <p className="text-[11px] tracking-[5px] uppercase" style={{ fontFamily: "'DM Serif Display', serif", color: "#5A554E" }}>
           Memory Archive — Mobile Wireframe
@@ -90,74 +102,46 @@ export default function App() {
           <StatusBar dark={isDarkScreen} />
           
           {sidebar && (
-            <Sidebar activeScreen={screen} onClose={() => setSidebar(false)}
-              onNavigate={(s) => { setScreen(s); setSidebar(false); }} />
+            <Sidebar activeScreen={screen} onClose={() => setSidebar(false)} onNavigate={(s) => { setScreen(s); setSidebar(false); }} />
           )}
           
-          {/* Screen content (라우팅 타워 역할) */}
+          {/* Screen content */}
           <div className="absolute inset-0 pt-[52px] flex flex-col">
             {screen === "login" && <LoginScreen onLogin={() => setScreen("bookshelf")} onSignup={() => setScreen("signup")} />}
             {screen === "signup" && <SignupScreen onSignup={() => setScreen("bookshelf")} onLogin={() => setScreen("login")} />}
             {screen === "bookshelf" && (
-              <BookshelfScreen bookIdx={bookIdx}
-                books={books}  // ✅ mock 대신 실제 데이터 전달 (BookshelfScreen도 수정 필요할 수 있음)
+              <BookshelfScreen bookIdx={bookIdx} books={books}
                 onPrev={() => setBookIdx(i => Math.max(0, i - 1))}
-                onNext={() => setBookIdx(i => Math.min(books.length - 1, i + 1))}
-                onOpenDiary={() => setScreen("diary")}
-                onMenuOpen={() => setSidebar(true)}
-                onFriends={() => setScreen("friends")}
-                onNewDiary={() => setScreen("newdiary")}
-              />
+                onNext={() => setBookIdx(i => Math.min(books.length, i + 1))}
+                onOpenDiary={() => setScreen("diary")} onMenuOpen={() => setSidebar(true)}
+                onFriends={() => setScreen("friends")} onNewDiary={() => setScreen("newdiary")} />
             )}
             {screen === "diary" && books.length > 0 && (
-              <DiaryScreen book={books[bookIdx] || books[0]} page={diaryPage}
-                onPageChange={setDiaryPage}
-                onBack={() => setScreen("bookshelf")}
-                onAddRecord={() => setScreen("capsule")}
-                bgmPlaying={bgmPlaying} trackIdx={trackIdx}
-                onBgmToggle={() => setBgmPlaying(p => !p)}
+              <DiaryScreen book={books[bookIdx] || books[0]} page={diaryPage} onPageChange={setDiaryPage}
+                onBack={() => setScreen("bookshelf")} onAddRecord={() => setScreen("capsule")}
+                bgmPlaying={bgmPlaying} trackIdx={trackIdx} onBgmToggle={() => setBgmPlaying(p => !p)}
                 onPrevTrack={() => setTrackIdx(t => (t - 1 + TRACKS.length) % TRACKS.length)}
-                onNextTrack={() => setTrackIdx(t => (t + 1) % TRACKS.length)}
-              />
+                onNextTrack={() => setTrackIdx(t => (t + 1) % TRACKS.length)} />
             )}
             {screen === "capsule" && <CapsuleScreen onClose={() => setScreen("diary")} onReveal={() => setScreen("add")} />}
             {screen === "add" && (
-              <AddScreen text={entryText} onText={setEntryText}
-                photoAdded={photoAdded} onPhoto={() => setPhotoAdded(p => !p)}
-                concept={concept} onConcept={setConcept}
-                musicQ={musicQ} onMusicQ={setMusicQ}
-                selTracks={selTracks} onTrackToggle={toggleTrack}
-                psEnabled={psEnabled} onPsToggle={() => setPsEnabled(p => !p)}
-                onBack={() => setScreen("capsule")}
-                onSave={() => setScreen("ai")}
-              />
+              <AddScreen text={entryText} onText={setEntryText} photoAdded={photoAdded} onPhoto={() => setPhotoAdded(p => !p)}
+                concept={concept} onConcept={setConcept} musicQ={musicQ} onMusicQ={setMusicQ}
+                selTracks={selTracks} onTrackToggle={toggleTrack} psEnabled={psEnabled} onPsToggle={() => setPsEnabled(p => !p)}
+                onBack={() => setScreen("capsule")} onSave={() => setScreen("ai")} />
             )}
             {screen === "ai" && <AiScreen onFinish={() => setScreen("diary")} />}
             {screen === "friends" && <FriendsScreen onBack={() => setScreen("bookshelf")} />}
-            {screen === "newdiary" && <NewDiaryScreen onBack={() => setScreen("bookshelf")} onCreate={() => setScreen("ai")} />}
+            {screen === "newdiary" && <NewDiaryScreen onBack={() => setScreen("bookshelf")} onCreate={() => setScreen("capsule")} />}
+            {screen === "profile" && <ProfileScreen onBack={() => setScreen("bookshelf")} />}
           </div>
           
           <div className="absolute rounded-full" style={{ bottom: 8, left: "50%", transform: "translateX(-50%)", width: 130, height: 5, background: isDarkScreen ? "rgba(200,169,122,0.2)" : "rgba(42,35,24,0.18)" }} />
         </div>
         
-        {/* Nav pills */}
-        <div className="flex flex-col items-center gap-1.5">
-          {[NAV.slice(0, 4), NAV.slice(4, 7), NAV.slice(7)].map((row, ri) => (
-            <div key={ri} className="flex gap-1.5">
-              {row.map(({ label, s }) => (
-                <button key={s} onClick={() => setScreen(s)}
-                  className="px-3 py-1.5 text-[11px] rounded-full transition-all"
-                  style={{
-                    background: screen === s ? "#2A2318" : "rgba(42,35,24,0.12)",
-                    color: screen === s ? "#F4F1EB" : "#6A6560",
-                    fontFamily: "'DM Serif Display', serif", letterSpacing: "0.5px",
-                  }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
+        {/* 하단 네비게이션 */}
+        <BottomNav screen={screen} setScreen={setScreen} />
+        
       </div>
     </div>
   );

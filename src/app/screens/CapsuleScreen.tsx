@@ -1,15 +1,25 @@
+// src/app/screens/CapsuleScreen.tsx
 import { useState } from "react";
 import { X } from "lucide-react";
+import { roomState } from "../roomState";
 
 export default function CapsuleScreen({ onClose, onReveal }: { onClose: () => void; onReveal: () => void }) {
   const [phase, setPhase] = useState<"idle" | "shaking" | "revealed">("idle");
-  const [role] = useState({ name: "관찰자", icon: "🔭", desc: "여행의 시선으로 순간을 포착하는 역할" });
 
   const handleCapsuleClick = () => {
     if (phase !== "idle") return;
     setPhase("shaking");
     setTimeout(() => setPhase("revealed"), 700);
   };
+
+  // 새 다이어리 화면에서 뽑아둔 내 역할(들). 없으면(=바로 이 화면에 들어온 경우) 안내문 표시.
+  const myRoles = roomState.myRoles;
+  const hasRoles = myRoles.length > 0;
+  const roleLine = hasRoles ? myRoles.map(r => `${r.icon} ${r.name}`).join(" · ") : "역할 정보 없음";
+  const descLine = hasRoles ? myRoles.map(r => r.desc).join(" / ") : "새 다이어리를 먼저 만들어주세요.";
+
+  const memberNames = Object.keys(roomState.allAssignments);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#EAE6DF" }}>
       <div className="flex items-center justify-between px-5 pt-4 pb-2">
@@ -59,14 +69,34 @@ export default function CapsuleScreen({ onClose, onReveal }: { onClose: () => vo
         </div>
       ) : (
         /* Phase 2: Role revealed */
-        <div className="flex-1 flex flex-col px-5 pt-2 pb-5">
+        <div className="flex-1 flex flex-col px-5 pt-2 pb-5 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
           <div className="rounded-xl p-4 mb-4 text-center" style={{ border: "1.5px solid rgba(200,169,122,0.35)", background: "rgba(200,169,122,0.05)" }}>
             <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: "#7A7064" }}>당신의 역할은</div>
             <div className="text-2xl mb-1" style={{ fontFamily: "'Noto Serif KR', serif", fontWeight: 700, color: "#A88550" }}>
-              {role.icon} {role.name}
+              {roleLine}
             </div>
-            <div className="text-xs" style={{ color: "#7A7064" }}>{role.desc}</div>
+            <div className="text-xs" style={{ color: "#7A7064" }}>{descLine}</div>
+            {myRoles.length > 1 && (
+              <div className="text-[10px] mt-1" style={{ color: "#C8A97A" }}>5인 미만 참여로 복수 역할이 배분되었어요</div>
+            )}
           </div>
+
+          {memberNames.length > 1 && (
+            <div className="rounded-xl p-4 mb-4" style={{ background: "#fff", border: "1px solid #E5E0D8" }}>
+              <div className="text-[10px] uppercase tracking-wider mb-2 font-semibold" style={{ color: "#7A7064" }}>멤버별 배정 역할</div>
+              <div className="flex flex-col gap-1.5">
+                {memberNames.map(name => (
+                  <div key={name} className="flex items-center justify-between text-xs">
+                    <span style={{ color: "#2A2318", fontWeight: 600 }}>{name}</span>
+                    <span style={{ color: "#A88550" }}>
+                      {roomState.allAssignments[name].map(r => `${r.icon} ${r.name}`).join(" · ")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="rounded-xl p-4 mb-4 text-sm" style={{ background: "#F4F1EB", border: "1px solid rgba(200,169,122,0.2)" }}>
             <div className="font-semibold mb-1" style={{ color: "#2A2318" }}>이 역할에서 작성할 내용</div>
             <ul className="text-xs space-y-1" style={{ color: "#7A7064" }}>
