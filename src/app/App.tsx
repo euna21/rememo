@@ -94,10 +94,11 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-8 px-6"
-      style={{ background: "radial-gradient(ellipse at 45% 35%,#C8C3B6 0%,#A8A39A 100%)", fontFamily: "'Noto Sans KR', sans-serif" }}>
+    // 🌟 1. 최상단 부모 태그 수정: 스크롤을 막고(overflow-hidden) 폰 화면에 꽉 차게(h-screen w-full) 변경
+    <div className="h-screen w-full overflow-hidden relative flex flex-col"
+      style={{ background: isDarkScreen ? "#1E1B16" : "#EAE6DF", fontFamily: "'Noto Sans KR', sans-serif" }}>
       
-      {/* 🌟 애니메이션 코드를 다시 내부 <style> 태그로 안전하게 복귀! */}
+      {/* 🌟 2. 애니메이션 코드는 그대로 유지 */}
       <style>{`
         @keyframes capsuleShake { 0%,100%{transform:translateX(0)} 15%,45%,75%{transform:translateX(-8px) rotate(-3deg)} 30%,60%,90%{transform:translateX(8px) rotate(3deg)} }
         @keyframes pulseFade { 0%,100%{opacity:0.45} 50%{opacity:1} }
@@ -105,59 +106,41 @@ export default function App() {
         .no-scroll::-webkit-scrollbar{display:none}
       `}</style>
       
-      <div className="flex flex-col items-center gap-4">
-        <p className="text-[11px] tracking-[5px] uppercase" style={{ fontFamily: "'DM Serif Display', serif", color: "#5A554E" }}>
-          Memory Archive — Mobile Wireframe
-        </p>
-        
-        {/* Phone */}
-        <div className="relative overflow-hidden"
-          style={{ width: 390, height: 844, borderRadius: 50, background: isDarkScreen ? "#1E1B16" : "#EAE6DF", boxShadow: "0 0 0 10px #2A2318,0 0 0 12px #3D372D,0 55px 130px rgba(0,0,0,0.58)" }}>
-          <div className="absolute z-50" style={{ top: 0, left: "50%", transform: "translateX(-50%)", width: 126, height: 37, background: "#2A2318", borderRadius: "0 0 20px 20px" }} />
-          <StatusBar dark={isDarkScreen} />
-          
-          {sidebar && (
-            <Sidebar activeScreen={screen} onClose={() => setSidebar(false)} onNavigate={(s) => { setScreen(s); setSidebar(false); }} />
-          )}
-          
-          {/* Screen content */}
-          <div className="absolute inset-0 pt-[52px] flex flex-col">
-            {screen === "login" && <LoginScreen onLogin={() => setScreen("bookshelf")} onSignup={() => setScreen("signup")} />}
-            {screen === "signup" && <SignupScreen onSignup={() => setScreen("bookshelf")} onLogin={() => setScreen("login")} />}
-            {screen === "bookshelf" && (
-              <BookshelfScreen bookIdx={bookIdx} books={books}
-                onPrev={() => setBookIdx(i => Math.max(0, i - 1))}
-                onNext={() => setBookIdx(i => Math.min(books.length, i + 1))}
-                onOpenDiary={() => setScreen("diary")} onMenuOpen={() => setSidebar(true)}
-                onFriends={() => setScreen("friends")} onNewDiary={() => setScreen("newdiary")} />
-            )}
-            {screen === "diary" && books.length > 0 && (
-              <DiaryScreen book={books[bookIdx] || books[0]} page={diaryPage} onPageChange={setDiaryPage}
-                onBack={() => setScreen("bookshelf")} onAddRecord={() => setScreen("capsule")}
-                bgmPlaying={bgmPlaying} trackIdx={trackIdx} onBgmToggle={() => setBgmPlaying(p => !p)}
-                onPrevTrack={() => setTrackIdx(t => (t - 1 + TRACKS.length) % TRACKS.length)}
-                onNextTrack={() => setTrackIdx(t => (t + 1) % TRACKS.length)} />
-            )}
-            {screen === "capsule" && <CapsuleScreen onClose={() => setScreen("diary")} onReveal={() => setScreen("add")} />}
-            {screen === "add" && (
-              <AddScreen text={entryText} onText={setEntryText} photoAdded={photoAdded} onPhoto={() => setPhotoAdded(p => !p)}
-                concept={concept} onConcept={setConcept} musicQ={musicQ} onMusicQ={setMusicQ}
-                selTracks={selTracks} onTrackToggle={toggleTrack} psEnabled={psEnabled} onPsToggle={() => setPsEnabled(p => !p)}
-                onBack={() => setScreen("capsule")} onSave={() => setScreen("ai")} />
-            )}
-            {screen === "ai" && <AiScreen onFinish={() => setScreen("diary")} />}
-            {screen === "friends" && <FriendsScreen onBack={() => setScreen("bookshelf")} />}
-            {screen === "newdiary" && <NewDiaryScreen onBack={() => setScreen("bookshelf")} onCreate={() => setScreen("capsule")} />}
-            {screen === "profile" && <ProfileScreen onBack={() => setScreen("bookshelf")} />}
-          </div>
-          
-          <div className="absolute rounded-full" style={{ bottom: 8, left: "50%", transform: "translateX(-50%)", width: 130, height: 5, background: isDarkScreen ? "rgba(200,169,122,0.2)" : "rgba(42,35,24,0.18)" }} />
-        </div>
-        
-        {/* 하단 네비게이션 */}
-        <BottomNav screen={screen} setScreen={setScreen} />
-        
+      {sidebar && (
+        <Sidebar activeScreen={screen} onClose={() => setSidebar(false)} onNavigate={(s) => { setScreen(s); setSidebar(false); }} />
+      )}
+      
+      {/* 🌟 3. 알맹이(스크린) 화면: 가짜 폰 테두리와 노치를 지우고 화면 전체를 쓰도록 수정 */}
+      <div className="absolute inset-0 pt-[52px] flex flex-col">
+        {screen === "login" && <LoginScreen onLogin={() => setScreen("bookshelf")} onSignup={() => setScreen("signup")} />}
+        {screen === "signup" && <SignupScreen onSignup={() => setScreen("bookshelf")} onLogin={() => setScreen("login")} />}
+        {screen === "bookshelf" && (
+          <BookshelfScreen bookIdx={bookIdx} books={books}
+            onPrev={() => setBookIdx(i => Math.max(0, i - 1))}
+            onNext={() => setBookIdx(i => Math.min(books.length, i + 1))}
+            onOpenDiary={() => setScreen("diary")} onMenuOpen={() => setSidebar(true)}
+            onFriends={() => setScreen("friends")} onNewDiary={() => setScreen("newdiary")} />
+        )}
+        {screen === "diary" && books.length > 0 && (
+          <DiaryScreen book={books[bookIdx] || books[0]} page={diaryPage} onPageChange={setDiaryPage}
+            onBack={() => setScreen("bookshelf")} onAddRecord={() => setScreen("capsule")}
+            bgmPlaying={bgmPlaying} trackIdx={trackIdx} onBgmToggle={() => setBgmPlaying(p => !p)}
+            onPrevTrack={() => setTrackIdx(t => (t - 1 + TRACKS.length) % TRACKS.length)}
+            onNextTrack={() => setTrackIdx(t => (t + 1) % TRACKS.length)} />
+        )}
+        {screen === "capsule" && <CapsuleScreen onClose={() => setScreen("diary")} onReveal={() => setScreen("add")} />}
+        {screen === "add" && (
+          <AddScreen text={entryText} onText={setEntryText} photoAdded={photoAdded} onPhoto={() => setPhotoAdded(p => !p)}
+            concept={concept} onConcept={setConcept} musicQ={musicQ} onMusicQ={setMusicQ}
+            selTracks={selTracks} onTrackToggle={toggleTrack} psEnabled={psEnabled} onPsToggle={() => setPsEnabled(p => !p)}
+            onBack={() => setScreen("capsule")} onSave={() => setScreen("ai")} />
+        )}
+        {screen === "ai" && <AiScreen onFinish={() => setScreen("diary")} />}
+        {screen === "friends" && <FriendsScreen onBack={() => setScreen("bookshelf")} />}
+        {screen === "newdiary" && <NewDiaryScreen onBack={() => setScreen("bookshelf")} onCreate={() => setScreen("capsule")} />}
+        {screen === "profile" && <ProfileScreen onBack={() => setScreen("bookshelf")} />}
       </div>
+      
     </div>
   );
 }
