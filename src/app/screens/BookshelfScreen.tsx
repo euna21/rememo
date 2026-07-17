@@ -1,11 +1,34 @@
-import { Menu, ChevronLeft, ChevronRight, Users } from "lucide-react";
+// src/app/screens/BookshelfScreen.tsx
+import { useState } from "react";
+import { Menu, ChevronLeft, ChevronRight, Users, Trash2 } from "lucide-react";
+import { auth, db } from "../../firebase";
+import { deleteDoc, doc } from "firebase/firestore";
 
 export default function BookshelfScreen({ bookIdx, books, onPrev, onNext, onOpenDiary, onMenuOpen, onFriends, onNewDiary }: {
   bookIdx: number; books: any[]; onPrev: () => void; onNext: () => void;
   onOpenDiary: () => void; onMenuOpen: () => void; onFriends: () => void; onNewDiary: () => void;
 }) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
   // Firestore에서 불러온 실제 책 목록 + 마지막에 "새 앨범 만들기" 카드 하나 붙이기
   const displayBooks = [...books, { id: "__blank__", blank: true }];
+
+  const handleDelete = async (e: React.MouseEvent, book: any) => {
+    e.stopPropagation(); // 카드 클릭(다이어리 열기)으로 안 번지게
+    if (deletingId) return;
+    const ok = window.confirm(`'${book.title}' 다이어리를 정말 삭제할까요?\n삭제하면 되돌릴 수 없어요.`);
+    if (!ok) return;
+    setDeletingId(book.id);
+    try {
+      await deleteDoc(doc(db, "rooms", book.id));
+    } catch (error) {
+      console.error("다이어리 삭제 실패:", error);
+      alert("삭제 중 문제가 발생했습니다. 다시 시도해주세요.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col">
@@ -38,8 +61,13 @@ export default function BookshelfScreen({ bookIdx, books, onPrev, onNext, onOpen
             const off = i - bookIdx;
             if (Math.abs(off) > 1) return null;
             const active = off === 0;
+            const isOwner = !book.blank && !!book.ownerId && auth.currentUser?.uid === book.ownerId;
+            const showDeleteBtn = active && isOwner && hoveredId === book.id;
             return (
-              <div key={book.id} onClick={active ? (book.blank ? onNewDiary : onOpenDiary) : undefined}
+              <div key={book.id}
+                onClick={active ? (book.blank ? onNewDiary : onOpenDiary) : undefined}
+                onMouseEnter={() => active && setHoveredId(book.id)}
+                onMouseLeave={() => setHoveredId(prev => (prev === book.id ? null : prev))}
                 style={{
                   position: "absolute", width: 200, height: 274,
                   borderRadius: active ? "5px 14px 14px 5px" : "4px 12px 12px 4px",
@@ -55,6 +83,25 @@ export default function BookshelfScreen({ bookIdx, books, onPrev, onNext, onOpen
                   padding: 24, textAlign: "center",
                   transformStyle: "preserve-3d", backfaceVisibility: "hidden",
                 }}>
+                {isOwner && (
+                  <button onClick={(e) => handleDelete(e, book)} disabled={deletingId === book.id}
+                    className="flex items-center gap-1.5"
+                    style={{
+                      position: "absolute", bottom: 16, left: "50%",
+                      transform: `translateX(-50%) translateY(${showDeleteBtn ? 0 : 8}px)`,
+                      zIndex: 30,
+                      padding: "7px 14px", borderRadius: 20,
+                      background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)",
+                      border: "1px solid rgba(255,255,255,0.22)",
+                      fontSize: 11, fontWeight: 600, color: "#F4F1EB",
+                      opacity: showDeleteBtn ? (deletingId === book.id ? 0.5 : 1) : 0,
+                      pointerEvents: showDeleteBtn ? "auto" : "none",
+                      transition: "opacity 0.2s ease, transform 0.2s ease",
+                    }}>
+                    <Trash2 size={12} color="#F4F1EB" />
+                    {deletingId === book.id ? "삭제 중..." : "삭제"}
+                  </button>
+                )}
                 {book.blank ? (
                   <>
                     <span style={{ fontSize: 36, color: "#C8A97A", marginBottom: 12, display: "block" }}>＋</span>
