@@ -114,7 +114,7 @@ export default function App() {
       <div className="absolute inset-0 flex flex-col">
         {screen === "login" && <LoginScreen onLogin={() => setScreen("bookshelf")} onSignup={() => setScreen("signup")} />}
         {screen === "signup" && <SignupScreen onSignup={() => setScreen("bookshelf")} onLogin={() => setScreen("login")} />}
-        {screen === "bookshelf" && (
+        {screen === "bookshelf" && ( 
           <BookshelfScreen bookIdx={bookIdx} books={books}
             onPrev={() => setBookIdx(i => Math.max(0, i - 1))}
             onNext={() => setBookIdx(i => Math.min(books.length, i + 1))}
