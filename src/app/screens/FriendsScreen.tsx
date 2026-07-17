@@ -137,7 +137,7 @@ export default function FriendsScreen({ onBack }: { onBack: () => void }) {
   const deleteFriendship = async (docId: string) => deleteDoc(doc(db, "friendships", docId));
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#F4F1EB] rounded-t-[28px] shadow-[0_-20px_60px_rgba(0,0,0,0.3)] pt-4 pb-10">
+    <div className="flex-1 flex flex-col h-full bg-[#F4F1EB] pt-4 pb-10">
       
       {/* 상단 헤더 영역 */}
       <div className="flex items-center px-6 pt-2 pb-4">

@@ -111,7 +111,7 @@ export default function App() {
       )}
       
       {/* 🌟 3. 알맹이(스크린) 화면: 가짜 폰 테두리와 노치를 지우고 화면 전체를 쓰도록 수정 */}
-      <div className="absolute inset-0 pt-[52px] flex flex-col">
+      <div className="absolute inset-0 flex flex-col">
         {screen === "login" && <LoginScreen onLogin={() => setScreen("bookshelf")} onSignup={() => setScreen("signup")} />}
         {screen === "signup" && <SignupScreen onSignup={() => setScreen("bookshelf")} onLogin={() => setScreen("login")} />}
         {screen === "bookshelf" && (
