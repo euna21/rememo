@@ -38,10 +38,12 @@ export default function App() {
   const [friendQ, setFriendQ] = useState("");
   const [psEnabled, setPsEnabled] = useState(false);
   const [books, setBooks] = useState<any[]>([]);
+  const [currentUid, setCurrentUid] = useState<string | null>(null);
 
   // 자동 로그인 감지
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUid(user ? user.uid : null);
       if (user) setScreen("bookshelf");
       else setScreen("login");
       setIsAuthLoading(false);
@@ -49,17 +51,23 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Firestore 데이터 구독
+  // Firestore 데이터 구독 (내가 초대된 다이어리만 보이도록 클라이언트에서 필터링)
   useEffect(() => {
+    if (!currentUid) {
+      setBooks([]);
+      return;
+    }
     const unsub = onSnapshot(collection(db, "rooms"), (snapshot) => {
-      const roomList = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }));
+      const roomList = snapshot.docs
+        .map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }))
+        .filter((room: any) => Array.isArray(room.memberUids) && room.memberUids.includes(currentUid));
       setBooks(roomList);
     });
     return () => unsub();
-  }, []);
+  }, [currentUid]);
 
   const toggleTrack = (i: number) =>
     setSelTracks(ts => ts.includes(i) ? ts.filter(x => x !== i) : ts.length < 3 ? [...ts, i] : ts);
