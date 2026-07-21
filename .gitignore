@@ -4,7 +4,17 @@ node_modules/
 # 2. 빌드 결과물 (팀원들은 각자 컴퓨터에서 빌드하면 됨)
 dist/
 www/
-android/
+
+# android 빌드 산출물 및 캐시 (소스코드는 추적하고, 빌드 결과물만 제외)
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/.idea/
+android/capacitor-cordova-android-plugins/build/
+android/app/release/
+*.apk
+*.aab
 
 # 3. 보안 파일 (API 키, 비밀번호 등이 들어가는 파일)
 .env
