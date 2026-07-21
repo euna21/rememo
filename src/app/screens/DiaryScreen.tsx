@@ -1,3 +1,4 @@
+import PageFlip3D from "../components/PageFlip3D";
 import { ChevronLeft, ChevronRight, Play, Pause, SkipBack, SkipForward, X, Plus, Trash2, Palette, RotateCw, Maximize2 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { db } from "../../firebase";
@@ -91,6 +92,9 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
   const track = TRACKS[trackIdx];
 
   useEffect(() => {
+    console.log("book id:", book?.id);
+    console.log("pagesMap:", pagesMap);
+    if (!book?.id) return;
     if (!book?.id) return;
     const bookRef = doc(db, "rooms", String(book.id));
     const unsub = onSnapshot(bookRef, (snap) => {
@@ -329,7 +333,14 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
     const newPageNum = pageKeys.length;
     try {
       const bookRef = doc(db, "rooms", String(book.id));
-      await updateDoc(bookRef, { [`pages.${newPageNum}`]: EMPTY_FIRESTORE_PAGE });
+      // 0번 페이지가 없으면 같이 만들어주기
+      const updates: Record<string, any> = {
+        [`pages.${newPageNum}`]: EMPTY_FIRESTORE_PAGE
+      };
+      if (!pagesMap["0"]) {
+        updates["pages.0"] = EMPTY_FIRESTORE_PAGE;
+      }
+      await updateDoc(bookRef, updates);
       setShowPagePanel(false);
       onPageChange(newPageNum);
     } catch (e) {
@@ -876,7 +887,15 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
       </div>
 
       {/* Page */}
-      <div className="mx-4 flex-1 min-h-0 relative overflow-hidden"
+      <PageFlip3D
+        canFlipNext={page < pageKeys.length - 1}
+        canFlipPrev={page > 0}
+        onFlipComplete={(dir) => {
+          if (dir === "next") onPageChange(Math.min(pageKeys.length - 1, page + 1));
+          else onPageChange(Math.max(0, page - 1));
+        }}
+      >
+        <div className="mx-4 flex-1 min-h-0 relative overflow-hidden"
         style={{ maxHeight: 430 }}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}>
@@ -885,32 +904,12 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           <div className="absolute inset-0 pointer-events-none"
             style={{ backgroundImage: "repeating-linear-gradient(transparent,transparent 27px,rgba(200,169,122,0.1) 28px)" }} />
           <div className="absolute top-0 bottom-0" style={{ left: 26, width: 1, background: "rgba(200,169,122,0.22)" }} />
-
-          <canvas
-            ref={canvasRef}
-            width={400}
-            height={430}
-            className="absolute inset-0 w-full h-full"
-            style={{
-              zIndex: showDrawingPanel ? 50 : 25,
-              pointerEvents: showDrawingPanel ? "auto" : "none",
-              cursor: drawingTool === "eraser" ? "cell" : "crosshair"
-            }}
-            onMouseDown={handleCanvasMouseDown}
-            onMouseMove={handleCanvasMouseMove}
-            onMouseUp={handleCanvasMouseUp}
-            onMouseLeave={handleCanvasMouseUp}
-          />
-
+          <canvas ref={canvasRef} width={400} height={430} className="absolute inset-0 w-full h-full"
+            style={{ zIndex: showDrawingPanel ? 50 : 25, pointerEvents: showDrawingPanel ? "auto" : "none", cursor: drawingTool === "eraser" ? "cell" : "crosshair" }}
+            onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp} onMouseLeave={handleCanvasMouseUp} />
           <div className="relative w-full h-full" ref={pageRef} style={{ padding: "14px 14px 14px 32px" }}
-            onMouseDown={(e) => {
-              // 진짜 빈 배경을 "누르는 순간"에만 선택 해제 (손 떼는 위치 기준이면 오작동함)
-              if (e.target === e.currentTarget) {
-                setSelectedSticker(null); setSelectedTextBox(null); setSelectedPhoto(null);
-              }
-            }}>
-
-            {/* 기본 텍스트 박스 */}
+            onMouseDown={(e) => { if (e.target === e.currentTarget) { setSelectedSticker(null); setSelectedTextBox(null); setSelectedPhoto(null); } }}>
             <div className="absolute rounded-xl" style={{ left: 14, top: 60, maxWidth: 175, zIndex: 10 }}>
               {isEditing ? (
                 <div>
@@ -927,38 +926,26 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
                 </div>
               )}
             </div>
-
-            {/* 사진들 */}
             {photoBoxes.map((p) => (
               <div key={p.id} className="absolute select-none"
                 style={{ left: p.x, top: p.y, width: p.width, zIndex: 30, transform: `rotate(${p.rotation}deg)`, cursor: decorMode ? "grab" : "default" }}
                 onMouseDown={(e) => decorMode && onPhotoMouseDown(e, p.id)}>
-                <img src={p.src} alt="upload" style={{
-                  width: "100%", display: "block", objectFit: "cover", borderRadius: 6,
-                  border: p.borderWidth > 0 ? `${p.borderWidth}px solid ${p.borderColor}` : "none",
-                  boxShadow: selectedPhoto === p.id ? "0 0 0 2px #C8A97A, 0 6px 18px rgba(0,0,0,0.2)" : "0 6px 18px rgba(0,0,0,0.2)"
-                }} />
+                <img src={p.src} alt="upload" style={{ width: "100%", display: "block", objectFit: "cover", borderRadius: 6, border: p.borderWidth > 0 ? `${p.borderWidth}px solid ${p.borderColor}` : "none", boxShadow: selectedPhoto === p.id ? "0 0 0 2px #C8A97A, 0 6px 18px rgba(0,0,0,0.2)" : "0 6px 18px rgba(0,0,0,0.2)" }} />
                 {selectedPhoto === p.id && decorMode && (
                   <>
-                    <button
-                      onMouseDown={(e) => { e.stopPropagation(); deletePhoto(p.id); }}
-                      style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, zIndex: 5 }}>
+                    <button onMouseDown={(e) => { e.stopPropagation(); deletePhoto(p.id); }} style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, zIndex: 5 }}>
                       <X size={10} color="#fff" />
                     </button>
-                    <div onMouseDown={(e) => onRotateHandleDown(e, "photo", p.id)}
-                      style={{ position: "absolute", top: -30, left: "50%", transform: "translateX(-50%)", width: 22, height: 22, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5 }}>
+                    <div onMouseDown={(e) => onRotateHandleDown(e, "photo", p.id)} style={{ position: "absolute", top: -30, left: "50%", transform: "translateX(-50%)", width: 22, height: 22, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5 }}>
                       <RotateCw size={11} color="#fff" />
                     </div>
-                    <div onMouseDown={(e) => onResizeHandleDown(e, "photo", p.id)}
-                      style={{ position: "absolute", bottom: -10, right: -10, width: 22, height: 22, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "nwse-resize", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5 }}>
+                    <div onMouseDown={(e) => onResizeHandleDown(e, "photo", p.id)} style={{ position: "absolute", bottom: -10, right: -10, width: 22, height: 22, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "nwse-resize", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5 }}>
                       <Maximize2 size={11} color="#fff" />
                     </div>
                   </>
                 )}
               </div>
             ))}
-
-            {/* 텍스트 박스들 */}
             {textBoxes.map((t) => (
               <div key={t.id} onMouseDown={(e) => decorMode && onTextBoxMouseDown(e, t.id)}
                 onClick={(e) => { e.stopPropagation(); if (decorMode) setEditingTextBox(t.id); }}
@@ -967,13 +954,9 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
                   <input type="text" value={t.content} onChange={(e) => updateTextBox(t.id, e.target.value)}
                     onBlur={() => setEditingTextBox(null)} onKeyDown={(e) => e.key === "Enter" && setEditingTextBox(null)} autoFocus
                     style={{ background: "transparent", border: "none", outline: "none", width: "auto", font: "inherit", color: "inherit" }} />
-                ) : (
-                  t.content
-                )}
+                ) : t.content}
               </div>
             ))}
-
-            {/* 스티커들 */}
             {stickers.map((s) => (
               <div key={s.id} onMouseDown={(e) => decorMode && onStickerMouseDown(e, s.id)}
                 className="absolute select-none"
@@ -981,39 +964,23 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
                 {s.emoji}
                 {selectedSticker === s.id && decorMode && (
                   <>
-                    <button onMouseDown={(e) => { e.stopPropagation(); deleteSticker(s.id); }}
-                      style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, transform: `rotate(${-(s.rotation || 0)}deg)`, zIndex: 5 }}>
+                    <button onMouseDown={(e) => { e.stopPropagation(); deleteSticker(s.id); }} style={{ position: "absolute", top: -8, right: -8, width: 16, height: 16, background: "#e74c3c", border: "none", borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, transform: `rotate(${-(s.rotation || 0)}deg)`, zIndex: 5 }}>
                       <X size={10} color="#fff" />
                     </button>
-                    <div onMouseDown={(e) => onRotateHandleDown(e, "sticker", s.id)}
-                      style={{ position: "absolute", top: -26, left: "50%", transform: `translateX(-50%) rotate(${-(s.rotation || 0)}deg)`, width: 18, height: 18, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5 }}>
+                    <div onMouseDown={(e) => onRotateHandleDown(e, "sticker", s.id)} style={{ position: "absolute", top: -26, left: "50%", transform: `translateX(-50%) rotate(${-(s.rotation || 0)}deg)`, width: 18, height: 18, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "grab", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5 }}>
                       <RotateCw size={9} color="#fff" />
                     </div>
-                    <div onMouseDown={(e) => onResizeHandleDown(e, "sticker", s.id)}
-                      style={{ position: "absolute", bottom: -8, right: -8, width: 18, height: 18, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "nwse-resize", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5, transform: `rotate(${-(s.rotation || 0)}deg)` }}>
+                    <div onMouseDown={(e) => onResizeHandleDown(e, "sticker", s.id)} style={{ position: "absolute", bottom: -8, right: -8, width: 18, height: 18, borderRadius: "50%", background: "#C8A97A", border: "2px solid #fff", cursor: "nwse-resize", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 6px rgba(0,0,0,0.25)", zIndex: 5, transform: `rotate(${-(s.rotation || 0)}deg)` }}>
                       <Maximize2 size={9} color="#fff" />
                     </div>
                   </>
                 )}
               </div>
             ))}
-
           </div>
         </div>
       </div>
-
-      {/* 하단 페이지 내비게이션 */}
-      <div className="flex items-center justify-between mx-6 my-3 text-[#7A7064]">
-        <button onClick={() => onPageChange(Math.max(0, page - 1))} disabled={page === 0}
-          className="p-1.5 rounded-full hover:bg-amber-100/30 disabled:opacity-20 transition-all">
-          <ChevronLeft size={18} />
-        </button>
-        <span className="text-[10px] font-semibold tracking-wider">PAGE {page + 1}</span>
-        <button onClick={() => onPageChange(Math.min(pageKeys.length - 1, page + 1))} disabled={page === pageKeys.length - 1}
-          className="p-1.5 rounded-full hover:bg-amber-100/30 disabled:opacity-20 transition-all">
-          <ChevronRight size={18} />
-        </button>
-      </div>
+    </PageFlip3D>
     </div>
   );
 }
