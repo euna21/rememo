@@ -11,7 +11,8 @@ import kotlin.math.*
 class DiaryBookView(
     context: Context,
     private val pageCount: Int,
-    private val onPageSelected: (Int) -> Unit
+    private val onPageSelected: (Int) -> Unit,
+    private val onBackPressed: () -> Unit
 ) : View(context) {
 
     private var currentPage = 0
@@ -30,6 +31,9 @@ class DiaryBookView(
     private var bookW = 0f
     private var bookH = 0f
     private var cornerR = 0f
+
+    // 뒤로가기 버튼 영역
+    private var backBtnRect = RectF()
 
     // Paint
     private val bgPaint = Paint().apply { color = Color.rgb(180, 175, 165) }
@@ -82,6 +86,7 @@ class DiaryBookView(
         bookRight = bookLeft + bookW
         bookBottom = bookTop + bookH
         cornerR = bookW * 0.04f
+        backBtnRect = RectF(24f, h * 0.035f, 24f + bookW * 0.24f, h * 0.035f + h * 0.045f)
 
         textPaint.textSize = w * 0.033f
         coverTextPaint.textSize = bookW * 0.16f
@@ -131,6 +136,7 @@ class DiaryBookView(
 
         drawBookFrame(canvas)
         drawBottomUI(canvas)
+        drawBackButton(canvas)
     }
 
     /**
@@ -335,7 +341,22 @@ class DiaryBookView(
         val rect = RectF(bookLeft, bookTop, bookRight, bookBottom)
         canvas.drawRoundRect(rect, cornerR, cornerR, framePaint)
     }
+    private fun drawBackButton(canvas: Canvas) {
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(160, 40, 30, 20)
+        }
+        canvas.drawRoundRect(backBtnRect, backBtnRect.height() / 2f, backBtnRect.height() / 2f, bgPaint)
 
+        val txtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(230, 215, 190)
+            textSize = backBtnRect.height() * 0.45f
+            typeface = Typeface.SERIF
+            textAlign = Paint.Align.CENTER
+        }
+        val fm = txtPaint.fontMetrics
+        val textY = backBtnRect.centerY() - (fm.ascent + fm.descent) / 2f
+        canvas.drawText("◀ 책장", backBtnRect.centerX(), textY, txtPaint)
+    }
     private fun drawBottomUI(canvas: Canvas) {
         val pageText = "${currentPage + 1} / $pageCount"
         canvas.drawText(pageText, width / 2f, bookBottom + height * 0.06f, textPaint)
@@ -370,6 +391,10 @@ class DiaryBookView(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_DOWN && backBtnRect.contains(event.x, event.y)) {
+            onBackPressed()
+            return true
+        }
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 animator?.cancel()

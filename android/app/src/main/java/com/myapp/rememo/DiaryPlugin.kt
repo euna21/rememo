@@ -20,11 +20,21 @@ class DiaryPlugin : Plugin() {
                 (it.parent as? android.view.ViewGroup)?.removeView(it)
             }
 
-            val bookView = DiaryBookView(activity, pageCount) { pageIndex ->
-                val ret = com.getcapacitor.JSObject()
-                ret.put("pageIndex", pageIndex)
-                notifyListeners("pageSelected", ret)
-            }
+            val bookView = DiaryBookView(
+                activity, pageCount,
+                onPageSelected = { pageIndex ->
+                    val ret = com.getcapacitor.JSObject()
+                    ret.put("pageIndex", pageIndex)
+                    notifyListeners("pageSelected", ret)
+                },
+                onBackPressed = {
+                    diaryView?.let {
+                        (it.parent as? android.view.ViewGroup)?.removeView(it)
+                        diaryView = null
+                    }
+                    notifyListeners("diaryBack", com.getcapacitor.JSObject())
+                }
+            )
             diaryView = bookView
 
             val rootView = activity.window.decorView.rootView as android.view.ViewGroup

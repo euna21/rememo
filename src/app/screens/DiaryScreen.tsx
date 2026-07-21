@@ -1,4 +1,4 @@
-import PageFlip3D from "../components/PageFlip3D";
+
 import { ChevronLeft, ChevronRight, Play, Pause, SkipBack, SkipForward, X, Plus, Trash2, Palette, RotateCw, Maximize2 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { db } from "../../firebase";
@@ -887,14 +887,19 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
       </div>
 
       {/* Page */}
-      <PageFlip3D
-        canFlipNext={page < pageKeys.length - 1}
-        canFlipPrev={page > 0}
-        onFlipComplete={(dir) => {
-          if (dir === "next") onPageChange(Math.min(pageKeys.length - 1, page + 1));
-          else onPageChange(Math.max(0, page - 1));
-        }}
-      >
+      <div className="relative flex-1 min-h-0">
+        {page > 0 && (
+          <button onClick={() => onPageChange(Math.max(0, page - 1))}
+            style={{ position: "absolute", left: 2, top: "50%", transform: "translateY(-50%)", zIndex: 60, width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,0.85)", border: "1px solid rgba(200,169,122,0.4)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}>
+            <ChevronLeft size={18} color="#7A5C3A" />
+          </button>
+        )}
+        {page < pageKeys.length - 1 && (
+          <button onClick={() => onPageChange(Math.min(pageKeys.length - 1, page + 1))}
+            style={{ position: "absolute", right: 2, top: "50%", transform: "translateY(-50%)", zIndex: 60, width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,0.85)", border: "1px solid rgba(200,169,122,0.4)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.12)" }}>
+            <ChevronRight size={18} color="#7A5C3A" />
+          </button>
+        )}
         <div className="mx-4 flex-1 min-h-0 relative overflow-hidden"
         style={{ maxHeight: 430 }}
         onMouseMove={onMouseMove}
@@ -980,7 +985,7 @@ export default function DiaryScreen({ book, page, onPageChange, onBack, onAddRec
           </div>
         </div>
       </div>
-    </PageFlip3D>
+      </div>
     </div>
   );
 }

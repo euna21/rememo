@@ -1,4 +1,5 @@
-import { openNativeDiary, addPageSelectedListener } from "./components/DiaryNative";
+
+import { openNativeDiary, closeNativeDiary, addPageSelectedListener, addDiaryBackListener } from "./components/DiaryNative";
 import { Capacitor } from "@capacitor/core";
 import { useState, useEffect } from "react";
 import { Screen } from "./types";
@@ -8,7 +9,6 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 
 import Sidebar from "./components/Sidebar";
-import Book3DViewer from "./components/Book3DViewer";
 
 import LoginScreen from "./screens/LoginScreen";
 import SignupScreen from "./screens/SignupScreen";
@@ -36,7 +36,6 @@ export default function App() {
   const [selTracks, setSelTracks] = useState<number[]>([]);
   const [psEnabled, setPsEnabled] = useState(false);
   const [books, setBooks] = useState<any[]>([]);
-  const [showBook3D, setShowBook3D] = useState(true); // 다이어리 들어가면 3D 뷰 먼저 보여줌
   const [currentUid, setCurrentUid] = useState<string | null>(null);
 
   useEffect(() => {
@@ -120,64 +119,44 @@ export default function App() {
           <BookshelfScreen bookIdx={bookIdx} books={books}
             onPrev={() => setBookIdx(i => Math.max(0, i - 1))}
             onNext={() => setBookIdx(i => Math.min(books.length, i + 1))}
-            onOpenDiary={() => {
-              if (Capacitor.isNativePlatform()) {
-                // 네이티브 앱에서는 Kotlin 뷰어 열기
-                addPageSelectedListener((pageIdx) => {
-                  setDiaryPage(pageIdx);
-                  setScreen("diary");
-                  setShowBook3D(false);
-                });
-                openNativeDiary(3);
-              } else {
-                // 웹에서는 기존 방식(웹용 3D 뷰어)
-                setShowBook3D(true);
-                setScreen("diary");
-              }
-            }}
+           onOpenDiary={() => {
+  if (Capacitor.isNativePlatform()) {
+    addPageSelectedListener((pageIdx) => {
+      closeNativeDiary();
+      setDiaryPage(pageIdx);
+      setScreen("diary");
+    });
+    addDiaryBackListener(() => {
+      setScreen("bookshelf");
+    });
+    openNativeDiary(3);
+  } else {
+    setDiaryPage(0);
+    setScreen("diary");
+  }
+}}
             onMenuOpen={() => setSidebar(true)}
             onFriends={() => setScreen("friends")}
             onNewDiary={() => setScreen("newdiary")} />
         )}
 
         {/* 다이어리 화면 */}
-        {screen === "diary" && books.length > 0 && (
-          <>
-            {/* 3D 책 뷰어 (웹 전용, 네이티브는 Kotlin 뷰어가 대신함) */}
-            {showBook3D && (
-              <Book3DViewer
-                pageCount={3}
-                onBack={() => setScreen("bookshelf")}
-                onPageSelect={(pageIdx) => {
-                  setDiaryPage(pageIdx);
-                  setShowBook3D(false);
-                }}
-              />
-            )}
-
-            {!showBook3D && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
-                <DiaryScreen
-                  book={books[bookIdx] || books[0]}
-                  page={diaryPage}
-                  onPageChange={setDiaryPage}
-                  onBack={() => setShowBook3D(true)}
-                  onAddRecord={() => setScreen("capsule")}
-                  bgmPlaying={bgmPlaying}
-                  trackIdx={trackIdx}
-                  onBgmToggle={() => setBgmPlaying(p => !p)}
-                  onPrevTrack={() => setTrackIdx(t => (t - 1 + TRACKS.length) % TRACKS.length)}
-                  onNextTrack={() => setTrackIdx(t => (t + 1) % TRACKS.length)}
-                />
-                <button
-                  onClick={() => setShowBook3D(true)}
-                  style={{ position: "absolute", bottom: 90, right: 12, zIndex: 99, background: "#C8A97A", color: "#fff", border: "none", borderRadius: 20, padding: "6px 14px", fontSize: 11, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.2)" }}>
-                  📖 책 보기
-                </button>
-              </div>
-            )}
-          </>
-        )}
+{screen === "diary" && books.length > 0 && (
+  <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+    <DiaryScreen
+      book={books[bookIdx] || books[0]}
+      page={diaryPage}
+      onPageChange={setDiaryPage}
+      onBack={() => setScreen("bookshelf")}
+      onAddRecord={() => setScreen("capsule")}
+      bgmPlaying={bgmPlaying}
+      trackIdx={trackIdx}
+      onBgmToggle={() => setBgmPlaying(p => !p)}
+      onPrevTrack={() => setTrackIdx(t => (t - 1 + TRACKS.length) % TRACKS.length)}
+      onNextTrack={() => setTrackIdx(t => (t + 1) % TRACKS.length)}
+    />
+  </div>
+)}
 
         {screen === "capsule" && <CapsuleScreen onClose={() => setScreen("diary")} onReveal={() => setScreen("add")} />}
         {screen === "add" && (
